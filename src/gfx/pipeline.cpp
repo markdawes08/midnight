@@ -40,7 +40,7 @@ void PlaneRenderer::init(GfxContext& ctx){
   create_pipeline(ctx);
 }
 
-void PlaneRenderer::cleanup(VkDevice device){
+void PlaneRenderer::cleanup(VkDevice /*device*/){
   destroy_pipeline();
   destroy_buffer(vbo_);
 }
@@ -145,6 +145,118 @@ void PlaneRenderer::record(VkCommandBuffer cmd, GfxContext& ctx, const glm::mat4
 
   // Triangle strip over 4 verts: (0,1,2,3) forms two triangles covering the quad
   vkCmdDraw(cmd, 4, 1, 0, 0);
+}
+
+// --- CubeRenderer ------------------------------------------------------------
+void CubeRenderer::init(GfxContext& ctx){
+  device_ = ctx.device();
+  phys_   = ctx.physical_device();
+
+  // 36-vertex (12 tri) unit cube, CCW wound, centered at origin
+  const float v[] = {
+    // +X
+     0.5f,-0.5f,-0.5f,  0.5f, 0.5f,-0.5f,  0.5f, 0.5f, 0.5f,
+     0.5f,-0.5f,-0.5f,  0.5f, 0.5f, 0.5f,  0.5f,-0.5f, 0.5f,
+    // -X
+    -0.5f,-0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f,-0.5f,
+    -0.5f,-0.5f, 0.5f, -0.5f, 0.5f,-0.5f, -0.5f,-0.5f,-0.5f,
+    // +Y
+    -0.5f, 0.5f,-0.5f, -0.5f, 0.5f, 0.5f,  0.5f, 0.5f, 0.5f,
+    -0.5f, 0.5f,-0.5f,  0.5f, 0.5f, 0.5f,  0.5f, 0.5f,-0.5f,
+    // -Y
+    -0.5f,-0.5f, 0.5f, -0.5f,-0.5f,-0.5f,  0.5f,-0.5f,-0.5f,
+    -0.5f,-0.5f, 0.5f,  0.5f,-0.5f,-0.5f,  0.5f,-0.5f, 0.5f,
+    // +Z
+    -0.5f,-0.5f, 0.5f,  0.5f,-0.5f, 0.5f,  0.5f, 0.5f, 0.5f,
+    -0.5f,-0.5f, 0.5f,  0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f,
+    // -Z
+     0.5f,-0.5f,-0.5f, -0.5f,-0.5f,-0.5f, -0.5f, 0.5f,-0.5f,
+     0.5f,-0.5f,-0.5f, -0.5f, 0.5f,-0.5f,  0.5f, 0.5f,-0.5f,
+  };
+
+  vbo_ = make_host_buffer(phys_, device_, sizeof(v), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+  upload_bytes(vbo_, v, sizeof(v));
+
+  create_pipeline(ctx);
+}
+
+void CubeRenderer::create_pipeline(GfxContext& ctx){
+  knownSwapVersion_ = ctx.swapchain_version();
+
+  auto vs = read_file(SHADER_DIR "/plane.vert.spv");        // reuse VS & push-constant MVP
+  auto fs = read_file(SHADER_DIR "/solid_blue.frag.spv");
+  VkShaderModule vsm = make_shader(device_, vs);
+  VkShaderModule fsm = make_shader(device_, fs);
+
+  VkPipelineShaderStageCreateInfo stages[2]{};
+  stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;   stages[0].module = vsm; stages[0].pName = "main";
+  stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; stages[1].module = fsm; stages[1].pName = "main";
+
+  VkPushConstantRange pcr{ }; pcr.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; pcr.offset = 0; pcr.size = sizeof(glm::mat4);
+  VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+  plci.pushConstantRangeCount = 1; plci.pPushConstantRanges = &pcr;
+  if (vkCreatePipelineLayout(device_, &plci, nullptr, &layout_) != VK_SUCCESS) throw std::runtime_error("cube pipeline layout");
+
+  VkVertexInputBindingDescription bind{0, sizeof(float)*3, VK_VERTEX_INPUT_RATE_VERTEX};
+  VkVertexInputAttributeDescription attr{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
+  VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+  vi.vertexBindingDescriptionCount = 1; vi.pVertexBindingDescriptions = &bind;
+  vi.vertexAttributeDescriptionCount = 1; vi.pVertexAttributeDescriptions = &attr;
+
+  VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+  ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+  VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+  vp.viewportCount = 1; vp.scissorCount = 1;
+
+  VkDynamicState dynStates[2] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+  VkPipelineDynamicStateCreateInfo dyn{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+  dyn.dynamicStateCount = 2; dyn.pDynamicStates = dynStates;
+
+  VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+  rs.polygonMode = VK_POLYGON_MODE_FILL;
+  rs.cullMode    = VK_CULL_MODE_BACK_BIT;          // backface cull to avoid weird overdraw (no depth yet)
+  rs.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  rs.lineWidth   = 1.0f;
+
+  VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+  ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+  VkPipelineColorBlendAttachmentState cba{};
+  cba.colorWriteMask = VK_COLOR_COMPONENT_R_BIT|VK_COLOR_COMPONENT_G_BIT|VK_COLOR_COMPONENT_B_BIT|VK_COLOR_COMPONENT_A_BIT;
+  VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+  cb.attachmentCount = 1; cb.pAttachments = &cba;
+
+  VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+  gp.stageCount = 2; gp.pStages = stages;
+  gp.pVertexInputState = &vi; gp.pInputAssemblyState = &ia; gp.pViewportState = &vp;
+  gp.pRasterizationState = &rs; gp.pMultisampleState = &ms; gp.pColorBlendState = &cb; gp.pDynamicState = &dyn;
+  gp.layout = layout_; gp.renderPass = ctx.render_pass(); gp.subpass = 0;
+
+  if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &pipeline_) != VK_SUCCESS)
+    throw std::runtime_error("cube graphics pipeline");
+
+  vkDestroyShaderModule(device_, vsm, nullptr);
+  vkDestroyShaderModule(device_, fsm, nullptr);
+}
+
+void CubeRenderer::record(VkCommandBuffer cmd, GfxContext& ctx, const glm::mat4& mvp){
+  ensure_pipeline(ctx);
+
+  VkExtent2D e = ctx.swap_extent();
+  VkViewport vp{0.f, 0.f, (float)e.width, (float)e.height, 0.f, 1.f};
+  VkRect2D sc{{0,0}, e};
+  vkCmdSetViewport(cmd, 0, 1, &vp);
+  vkCmdSetScissor(cmd, 0, 1, &sc);
+
+  vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+  vkCmdPushConstants(cmd, layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
+
+  VkDeviceSize off = 0; VkBuffer vb = vbo_.buf;
+  vkCmdBindVertexBuffers(cmd, 0, 1, &vb, &off);
+  vkCmdDraw(cmd, 36, 1, 0, 0);
 }
 
 } // namespace gfx

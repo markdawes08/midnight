@@ -69,6 +69,7 @@ add_compile_definitions(SHADER_DIR="${MIDNIGHT_SHADER_BIN_DIR}")
 set(MIDNIGHT_SHADER_SOURCES
   assets/shaders/plane.vert
   assets/shaders/solid_green.frag
+  assets/shaders/solid_blue.frag
 )
 set(MIDNIGHT_SHADER_OUTPUTS)
 foreach(SRC ${MIDNIGHT_SHADER_SOURCES})
