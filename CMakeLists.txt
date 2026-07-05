@@ -27,8 +27,10 @@ add_executable(midnight
     src/midnight/core/Application.cpp
     src/midnight/platform/SdlContext.cpp
     src/midnight/platform/Window.cpp
+    src/midnight/renderer/vulkan/VulkanDevice.cpp
     src/midnight/renderer/vulkan/VulkanInstance.cpp
     src/midnight/renderer/vulkan/VulkanSurface.cpp
+    src/midnight/renderer/vulkan/VulkanUtils.cpp
 )
 
 target_include_directories(midnight

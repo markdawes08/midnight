@@ -1,5 +1,7 @@
 #include "midnight/renderer/vulkan/VulkanInstance.hpp"
 
+#include "midnight/renderer/vulkan/VulkanUtils.hpp"
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
@@ -14,59 +16,6 @@ namespace midnight {
 namespace {
 
 constexpr const char* kValidationLayerName = "VK_LAYER_KHRONOS_validation";
-
-std::string vk_result_to_string(const VkResult result)
-{
-    switch (result) {
-        case VK_SUCCESS:
-            return "VK_SUCCESS";
-        case VK_NOT_READY:
-            return "VK_NOT_READY";
-        case VK_TIMEOUT:
-            return "VK_TIMEOUT";
-        case VK_EVENT_SET:
-            return "VK_EVENT_SET";
-        case VK_EVENT_RESET:
-            return "VK_EVENT_RESET";
-        case VK_INCOMPLETE:
-            return "VK_INCOMPLETE";
-        case VK_ERROR_OUT_OF_HOST_MEMORY:
-            return "VK_ERROR_OUT_OF_HOST_MEMORY";
-        case VK_ERROR_OUT_OF_DEVICE_MEMORY:
-            return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
-        case VK_ERROR_INITIALIZATION_FAILED:
-            return "VK_ERROR_INITIALIZATION_FAILED";
-        case VK_ERROR_DEVICE_LOST:
-            return "VK_ERROR_DEVICE_LOST";
-        case VK_ERROR_MEMORY_MAP_FAILED:
-            return "VK_ERROR_MEMORY_MAP_FAILED";
-        case VK_ERROR_LAYER_NOT_PRESENT:
-            return "VK_ERROR_LAYER_NOT_PRESENT";
-        case VK_ERROR_EXTENSION_NOT_PRESENT:
-            return "VK_ERROR_EXTENSION_NOT_PRESENT";
-        case VK_ERROR_FEATURE_NOT_PRESENT:
-            return "VK_ERROR_FEATURE_NOT_PRESENT";
-        case VK_ERROR_INCOMPATIBLE_DRIVER:
-            return "VK_ERROR_INCOMPATIBLE_DRIVER";
-        case VK_ERROR_TOO_MANY_OBJECTS:
-            return "VK_ERROR_TOO_MANY_OBJECTS";
-        case VK_ERROR_FORMAT_NOT_SUPPORTED:
-            return "VK_ERROR_FORMAT_NOT_SUPPORTED";
-        case VK_ERROR_SURFACE_LOST_KHR:
-            return "VK_ERROR_SURFACE_LOST_KHR";
-        case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR:
-            return "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR";
-        default:
-            return "VkResult(" + std::to_string(static_cast<int>(result)) + ")";
-    }
-}
-
-std::string api_version_to_string(const uint32_t version)
-{
-    return std::to_string(VK_API_VERSION_MAJOR(version)) + "." +
-           std::to_string(VK_API_VERSION_MINOR(version)) + "." +
-           std::to_string(VK_API_VERSION_PATCH(version));
-}
 
 uint32_t choose_instance_api_version()
 {
@@ -88,23 +37,17 @@ uint32_t choose_instance_api_version()
 bool layer_available(const char* layer_name)
 {
     uint32_t layer_count = 0;
-    VkResult result = vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
-
-    if (result != VK_SUCCESS) {
-        throw std::runtime_error(
-            "vkEnumerateInstanceLayerProperties failed: " + vk_result_to_string(result)
-        );
-    }
+    throw_if_vk_failed(
+        vkEnumerateInstanceLayerProperties(&layer_count, nullptr),
+        "vkEnumerateInstanceLayerProperties"
+    );
 
     std::vector<VkLayerProperties> layers(layer_count);
 
-    result = vkEnumerateInstanceLayerProperties(&layer_count, layers.data());
-
-    if (result != VK_SUCCESS) {
-        throw std::runtime_error(
-            "vkEnumerateInstanceLayerProperties failed: " + vk_result_to_string(result)
-        );
-    }
+    throw_if_vk_failed(
+        vkEnumerateInstanceLayerProperties(&layer_count, layers.data()),
+        "vkEnumerateInstanceLayerProperties"
+    );
 
     return std::any_of(
         layers.begin(),
@@ -118,31 +61,17 @@ bool layer_available(const char* layer_name)
 bool extension_available(const char* extension_name)
 {
     uint32_t extension_count = 0;
-    VkResult result = vkEnumerateInstanceExtensionProperties(
-        nullptr,
-        &extension_count,
-        nullptr
+    throw_if_vk_failed(
+        vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr),
+        "vkEnumerateInstanceExtensionProperties"
     );
-
-    if (result != VK_SUCCESS) {
-        throw std::runtime_error(
-            "vkEnumerateInstanceExtensionProperties failed: " + vk_result_to_string(result)
-        );
-    }
 
     std::vector<VkExtensionProperties> extensions(extension_count);
 
-    result = vkEnumerateInstanceExtensionProperties(
-        nullptr,
-        &extension_count,
-        extensions.data()
+    throw_if_vk_failed(
+        vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, extensions.data()),
+        "vkEnumerateInstanceExtensionProperties"
     );
-
-    if (result != VK_SUCCESS) {
-        throw std::runtime_error(
-            "vkEnumerateInstanceExtensionProperties failed: " + vk_result_to_string(result)
-        );
-    }
 
     return std::any_of(
         extensions.begin(),
@@ -317,14 +246,13 @@ void VulkanInstance::create_instance()
         create_info.pNext = &debug_create_info;
     }
 
-    const VkResult result = vkCreateInstance(&create_info, nullptr, &instance_);
-
-    if (result != VK_SUCCESS) {
-        throw std::runtime_error("vkCreateInstance failed: " + vk_result_to_string(result));
-    }
+    throw_if_vk_failed(
+        vkCreateInstance(&create_info, nullptr, &instance_),
+        "vkCreateInstance"
+    );
 
     std::cout << "[Midnight] Vulkan instance created. API "
-              << api_version_to_string(api_version)
+              << vulkan_api_version_to_string(api_version)
               << '\n';
 
     std::cout << "[Midnight] Vulkan instance extensions:\n";
@@ -359,18 +287,10 @@ void VulkanInstance::setup_debug_messenger()
     const VkDebugUtilsMessengerCreateInfoEXT create_info =
         make_debug_messenger_create_info();
 
-    const VkResult result = create_debug_utils_messenger(
-        instance_,
-        &create_info,
-        nullptr,
-        &debug_messenger_
+    throw_if_vk_failed(
+        create_debug_utils_messenger(instance_, &create_info, nullptr, &debug_messenger_),
+        "vkCreateDebugUtilsMessengerEXT"
     );
-
-    if (result != VK_SUCCESS) {
-        throw std::runtime_error(
-            "vkCreateDebugUtilsMessengerEXT failed: " + vk_result_to_string(result)
-        );
-    }
 
     std::cout << "[Midnight] Vulkan debug messenger created\n";
 }
