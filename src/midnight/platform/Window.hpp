@@ -27,15 +27,23 @@ public:
     Window& operator=(Window&&) = delete;
 
     [[nodiscard]] SDL_Window* sdl_handle() const noexcept;
+
     [[nodiscard]] int width() const noexcept;
     [[nodiscard]] int height() const noexcept;
+
+    [[nodiscard]] int pixel_width() const noexcept;
+    [[nodiscard]] int pixel_height() const noexcept;
 
     void refresh_size() noexcept;
 
 private:
     SDL_Window* handle_ = nullptr;
+
     int width_ = 0;
     int height_ = 0;
+
+    int pixel_width_ = 0;
+    int pixel_height_ = 0;
 };
 
 }

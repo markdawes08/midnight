@@ -79,6 +79,38 @@ std::string vulkan_device_type_to_string(const VkPhysicalDeviceType type)
     }
 }
 
+std::string vulkan_format_to_string(const VkFormat format)
+{
+    switch (format) {
+        case VK_FORMAT_B8G8R8A8_SRGB:
+            return "VK_FORMAT_B8G8R8A8_SRGB";
+        case VK_FORMAT_B8G8R8A8_UNORM:
+            return "VK_FORMAT_B8G8R8A8_UNORM";
+        case VK_FORMAT_R8G8B8A8_SRGB:
+            return "VK_FORMAT_R8G8B8A8_SRGB";
+        case VK_FORMAT_R8G8B8A8_UNORM:
+            return "VK_FORMAT_R8G8B8A8_UNORM";
+        default:
+            return "VkFormat(" + std::to_string(static_cast<int>(format)) + ")";
+    }
+}
+
+std::string vulkan_present_mode_to_string(const VkPresentModeKHR present_mode)
+{
+    switch (present_mode) {
+        case VK_PRESENT_MODE_IMMEDIATE_KHR:
+            return "VK_PRESENT_MODE_IMMEDIATE_KHR";
+        case VK_PRESENT_MODE_MAILBOX_KHR:
+            return "VK_PRESENT_MODE_MAILBOX_KHR";
+        case VK_PRESENT_MODE_FIFO_KHR:
+            return "VK_PRESENT_MODE_FIFO_KHR";
+        case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+            return "VK_PRESENT_MODE_FIFO_RELAXED_KHR";
+        default:
+            return "VkPresentModeKHR(" + std::to_string(static_cast<int>(present_mode)) + ")";
+    }
+}
+
 void throw_if_vk_failed(const VkResult result, const std::string_view operation)
 {
     if (result == VK_SUCCESS) {

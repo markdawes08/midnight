@@ -9,7 +9,9 @@ namespace midnight {
 
 Window::Window(const CreateInfo& create_info)
     : width_(create_info.width),
-      height_(create_info.height)
+      height_(create_info.height),
+      pixel_width_(create_info.width),
+      pixel_height_(create_info.height)
 {
     SDL_WindowFlags flags = 0;
 
@@ -60,6 +62,16 @@ int Window::height() const noexcept
     return height_;
 }
 
+int Window::pixel_width() const noexcept
+{
+    return pixel_width_;
+}
+
+int Window::pixel_height() const noexcept
+{
+    return pixel_height_;
+}
+
 void Window::refresh_size() noexcept
 {
     int width = 0;
@@ -68,6 +80,14 @@ void Window::refresh_size() noexcept
     if (SDL_GetWindowSize(handle_, &width, &height)) {
         width_ = width;
         height_ = height;
+    }
+
+    int pixel_width = 0;
+    int pixel_height = 0;
+
+    if (SDL_GetWindowSizeInPixels(handle_, &pixel_width, &pixel_height)) {
+        pixel_width_ = pixel_width;
+        pixel_height_ = pixel_height;
     }
 }
 
