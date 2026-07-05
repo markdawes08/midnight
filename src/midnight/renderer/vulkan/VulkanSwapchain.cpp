@@ -275,7 +275,7 @@ void VulkanSwapchain::create_swapchain(const Window& window)
     create_info.imageColorSpace = surface_format.colorSpace;
     create_info.imageExtent = swap_extent;
     create_info.imageArrayLayers = 1;
-    create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     create_info.preTransform = support.capabilities.currentTransform;
     create_info.compositeAlpha = choose_composite_alpha(support.capabilities);
     create_info.presentMode = present_mode;
