@@ -59,7 +59,9 @@ add_executable(midnight
     src/midnight/platform/Window.cpp
     src/midnight/renderer/vulkan/VulkanDevice.cpp
     src/midnight/renderer/vulkan/VulkanFrameRenderer.cpp
+    src/midnight/renderer/vulkan/VulkanGraphicsPipeline.cpp
     src/midnight/renderer/vulkan/VulkanInstance.cpp
+    src/midnight/renderer/vulkan/VulkanRenderPass.cpp
     src/midnight/renderer/vulkan/VulkanSurface.cpp
     src/midnight/renderer/vulkan/VulkanSwapchain.cpp
     src/midnight/renderer/vulkan/VulkanUtils.cpp
@@ -76,6 +78,11 @@ target_link_libraries(midnight
     PRIVATE
         ${MIDNIGHT_SDL_TARGET}
         Vulkan::Vulkan
+)
+
+target_compile_definitions(midnight
+    PRIVATE
+        "MIDNIGHT_SHADER_DIR=\"${MIDNIGHT_SHADER_OUTPUT_DIR}\""
 )
 
 target_compile_options(midnight
