@@ -61,6 +61,7 @@ add_executable(midnight
     src/midnight/renderer/vulkan/VulkanDevice.cpp
     src/midnight/renderer/vulkan/VulkanFrameRenderer.cpp
     src/midnight/renderer/vulkan/VulkanGraphicsPipeline.cpp
+    src/midnight/renderer/vulkan/VulkanImage.cpp
     src/midnight/renderer/vulkan/VulkanInstance.cpp
     src/midnight/renderer/vulkan/VulkanRenderPass.cpp
     src/midnight/renderer/vulkan/VulkanSurface.cpp

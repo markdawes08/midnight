@@ -6,6 +6,7 @@
 #include "midnight/renderer/vulkan/VulkanDevice.hpp"
 #include "midnight/renderer/vulkan/VulkanFrameRenderer.hpp"
 #include "midnight/renderer/vulkan/VulkanGraphicsPipeline.hpp"
+#include "midnight/renderer/vulkan/VulkanImage.hpp"
 #include "midnight/renderer/vulkan/VulkanInstance.hpp"
 #include "midnight/renderer/vulkan/VulkanRenderPass.hpp"
 #include "midnight/renderer/vulkan/VulkanSurface.hpp"
@@ -39,6 +40,7 @@ private:
     VulkanGraphicsPipeline vulkan_graphics_pipeline_;
     VulkanBuffer quad_vertex_buffer_;
     VulkanBuffer quad_index_buffer_;
+    VulkanImage texture_image_;
     VulkanFrameRenderer vulkan_frame_renderer_;
 
     bool running_ = true;

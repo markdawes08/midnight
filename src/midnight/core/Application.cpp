@@ -64,6 +64,16 @@ Application::Application()
           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
       ),
+      texture_image_(
+          vulkan_device_,
+          VulkanImage::CreateInfo{
+              .extent = VkExtent2D{.width = 2, .height = 2},
+              .format = VK_FORMAT_R8G8B8A8_SRGB,
+              .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                  VK_IMAGE_USAGE_SAMPLED_BIT,
+              .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT
+          }
+      ),
       vulkan_frame_renderer_(
           vulkan_device_,
           vulkan_swapchain_,
