@@ -9,6 +9,9 @@ struct Vertex2D final {
     float color_r = 1.0f;
     float color_g = 1.0f;
     float color_b = 1.0f;
+
+    float texture_u = 0.0f;
+    float texture_v = 0.0f;
 };
 
 }

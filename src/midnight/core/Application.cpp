@@ -12,10 +12,10 @@ namespace midnight {
 namespace {
 
 constexpr std::array<Vertex2D, 4> kQuadVertices{{
-    Vertex2D{-0.55f, -0.55f, 0.95f, 0.25f, 0.45f },
-    Vertex2D{ 0.55f, -0.55f, 0.25f, 0.90f, 0.70f },
-    Vertex2D{ 0.55f,  0.55f, 0.35f, 0.45f, 1.00f },
-    Vertex2D{-0.55f,  0.55f, 0.95f, 0.80f, 0.25f }
+    Vertex2D{-0.55f, -0.55f, 0.95f, 0.25f, 0.45f, 0.0f, 0.0f },
+    Vertex2D{ 0.55f, -0.55f, 0.25f, 0.90f, 0.70f, 1.0f, 0.0f },
+    Vertex2D{ 0.55f,  0.55f, 0.35f, 0.45f, 1.00f, 1.0f, 1.0f },
+    Vertex2D{-0.55f,  0.55f, 0.95f, 0.80f, 0.25f, 0.0f, 1.0f }
 }};
 
 constexpr std::array<std::uint16_t, 6> kQuadIndices{{
@@ -121,7 +121,7 @@ void Application::print_startup_info() const
               << "x"
               << window_.pixel_height()
               << '\n';
-    std::cout << "[Midnight] Rendering an indexed quad\n";
+    std::cout << "[Midnight] Rendering an indexed quad with UV coordinates\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
 
