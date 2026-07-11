@@ -23,6 +23,11 @@ constexpr std::array<std::uint16_t, 6> kQuadIndices{{
     2, 3, 0
 }};
 
+constexpr std::array<std::uint8_t, 16> kCheckerboardPixels{{
+    255, 255, 255, 255,     16,  12,  24, 255,
+     16,  12,  24, 255,    255, 255, 255, 255
+}};
+
 constexpr VkDeviceSize kQuadVertexBufferSize =
     sizeof(Vertex2D) * kQuadVertices.size();
 
@@ -96,9 +101,11 @@ Application::Application()
         kQuadIndexBufferSize
     );
 
-    vulkan_transfer_context_.execute([](VkCommandBuffer) {});
-
-    std::cout << "[Midnight] Vulkan transfer submission completed\n";
+    vulkan_transfer_context_.upload_to_new_sampled_image(
+        texture_image_,
+        kCheckerboardPixels.data(),
+        static_cast<VkDeviceSize>(kCheckerboardPixels.size())
+    );
 }
 
 int Application::run()

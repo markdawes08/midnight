@@ -7,6 +7,7 @@
 namespace midnight {
 
 class VulkanDevice;
+class VulkanImage;
 
 class VulkanTransferContext final {
 public:
@@ -22,6 +23,12 @@ public:
     VulkanTransferContext& operator=(VulkanTransferContext&&) = delete;
 
     void execute(const CommandRecorder& record_commands);
+
+    void upload_to_new_sampled_image(
+        const VulkanImage& destination_image,
+        const void* source,
+        VkDeviceSize byte_size
+    );
 
 private:
     void create_command_pool();
