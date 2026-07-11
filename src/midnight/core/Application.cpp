@@ -84,6 +84,12 @@ Application::Application()
           vulkan_device_,
           VulkanSampler::CreateInfo{}
       ),
+      texture_descriptor_(
+          vulkan_device_,
+          vulkan_graphics_pipeline_.descriptor_set_layout(),
+          texture_image_,
+          texture_sampler_
+      ),
       vulkan_frame_renderer_(
           vulkan_device_,
           vulkan_swapchain_,

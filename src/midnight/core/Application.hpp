@@ -12,6 +12,7 @@
 #include "midnight/renderer/vulkan/VulkanSampler.hpp"
 #include "midnight/renderer/vulkan/VulkanSurface.hpp"
 #include "midnight/renderer/vulkan/VulkanSwapchain.hpp"
+#include "midnight/renderer/vulkan/VulkanTextureDescriptor.hpp"
 #include "midnight/renderer/vulkan/VulkanTransferContext.hpp"
 
 namespace midnight {
@@ -45,6 +46,7 @@ private:
     VulkanBuffer quad_index_buffer_;
     VulkanImage texture_image_;
     VulkanSampler texture_sampler_;
+    VulkanTextureDescriptor texture_descriptor_;
     VulkanFrameRenderer vulkan_frame_renderer_;
 
     bool running_ = true;
