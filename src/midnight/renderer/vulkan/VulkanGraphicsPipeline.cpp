@@ -38,13 +38,24 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(
       swapchain_(swapchain),
       render_pass_(render_pass)
 {
-    create_pipeline_layout();
-    create_graphics_pipeline();
+    try {
+        create_descriptor_set_layout();
+        create_pipeline_layout();
+        create_graphics_pipeline();
+    } catch (...) {
+        destroy();
+        throw;
+    }
 
     std::cout << "[Midnight] Vulkan graphics pipeline created\n";
 }
 
 VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
+{
+    destroy();
+}
+
+void VulkanGraphicsPipeline::destroy() noexcept
 {
     if (graphics_pipeline_ != VK_NULL_HANDLE) {
         vkDestroyPipeline(device_.handle(), graphics_pipeline_, nullptr);
@@ -54,6 +65,15 @@ VulkanGraphicsPipeline::~VulkanGraphicsPipeline()
     if (pipeline_layout_ != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device_.handle(), pipeline_layout_, nullptr);
         pipeline_layout_ = VK_NULL_HANDLE;
+    }
+
+    if (descriptor_set_layout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(
+            device_.handle(),
+            descriptor_set_layout_,
+            nullptr
+        );
+        descriptor_set_layout_ = VK_NULL_HANDLE;
     }
 }
 
@@ -65,6 +85,11 @@ VkPipeline VulkanGraphicsPipeline::handle() const noexcept
 VkPipelineLayout VulkanGraphicsPipeline::layout() const noexcept
 {
     return pipeline_layout_;
+}
+
+VkDescriptorSetLayout VulkanGraphicsPipeline::descriptor_set_layout() const noexcept
+{
+    return descriptor_set_layout_;
 }
 
 VkShaderModule VulkanGraphicsPipeline::create_shader_module(
@@ -106,12 +131,39 @@ VkShaderModule VulkanGraphicsPipeline::create_shader_module(
     return shader_module;
 }
 
+void VulkanGraphicsPipeline::create_descriptor_set_layout()
+{
+    VkDescriptorSetLayoutBinding texture_binding{};
+    texture_binding.binding = 0;
+    texture_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    texture_binding.descriptorCount = 1;
+    texture_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    texture_binding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutCreateInfo create_info{};
+    create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    create_info.bindingCount = 1;
+    create_info.pBindings = &texture_binding;
+
+    throw_if_vk_failed(
+        vkCreateDescriptorSetLayout(
+            device_.handle(),
+            &create_info,
+            nullptr,
+            &descriptor_set_layout_
+        ),
+        "vkCreateDescriptorSetLayout"
+    );
+
+    std::cout << "[Midnight] Vulkan descriptor set layout created\n";
+}
+
 void VulkanGraphicsPipeline::create_pipeline_layout()
 {
     VkPipelineLayoutCreateInfo create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    create_info.setLayoutCount = 0;
-    create_info.pSetLayouts = nullptr;
+    create_info.setLayoutCount = 1;
+    create_info.pSetLayouts = &descriptor_set_layout_;
     create_info.pushConstantRangeCount = 0;
     create_info.pPushConstantRanges = nullptr;
 
