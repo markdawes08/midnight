@@ -5,6 +5,7 @@
 #include "midnight/renderer/vulkan/VulkanGraphicsPipeline.hpp"
 #include "midnight/renderer/vulkan/VulkanRenderPass.hpp"
 #include "midnight/renderer/vulkan/VulkanSwapchain.hpp"
+#include "midnight/renderer/vulkan/VulkanTextureDescriptor.hpp"
 #include "midnight/renderer/vulkan/VulkanUtils.hpp"
 
 #include <array>
@@ -20,6 +21,7 @@ VulkanFrameRenderer::VulkanFrameRenderer(
     const VulkanSwapchain& swapchain,
     const VulkanRenderPass& render_pass,
     const VulkanGraphicsPipeline& graphics_pipeline,
+    const VulkanTextureDescriptor& texture_descriptor,
     const VulkanBuffer& vertex_buffer,
     const VulkanBuffer& index_buffer,
     const std::uint32_t index_count,
@@ -29,6 +31,7 @@ VulkanFrameRenderer::VulkanFrameRenderer(
       swapchain_(swapchain),
       render_pass_(render_pass),
       graphics_pipeline_(graphics_pipeline),
+      texture_descriptor_(texture_descriptor),
       vertex_buffer_(vertex_buffer),
       index_buffer_(index_buffer),
       index_count_(index_count),
@@ -412,6 +415,20 @@ void VulkanFrameRenderer::record_command_buffer(
         command_buffer,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
         graphics_pipeline_.handle()
+    );
+
+    const VkDescriptorSet texture_descriptor_set =
+        texture_descriptor_.handle();
+
+    vkCmdBindDescriptorSets(
+        command_buffer,
+        VK_PIPELINE_BIND_POINT_GRAPHICS,
+        graphics_pipeline_.layout(),
+        0,
+        1,
+        &texture_descriptor_set,
+        0,
+        nullptr
     );
 
     const VkBuffer vertex_buffers[] = {

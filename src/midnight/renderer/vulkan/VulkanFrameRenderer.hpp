@@ -13,6 +13,7 @@ class VulkanDevice;
 class VulkanGraphicsPipeline;
 class VulkanRenderPass;
 class VulkanSwapchain;
+class VulkanTextureDescriptor;
 
 class VulkanFrameRenderer final {
 public:
@@ -21,6 +22,7 @@ public:
         const VulkanSwapchain& swapchain,
         const VulkanRenderPass& render_pass,
         const VulkanGraphicsPipeline& graphics_pipeline,
+        const VulkanTextureDescriptor& texture_descriptor,
         const VulkanBuffer& vertex_buffer,
         const VulkanBuffer& index_buffer,
         std::uint32_t index_count,
@@ -58,6 +60,7 @@ private:
     const VulkanSwapchain& swapchain_;
     const VulkanRenderPass& render_pass_;
     const VulkanGraphicsPipeline& graphics_pipeline_;
+    const VulkanTextureDescriptor& texture_descriptor_;
     const VulkanBuffer& vertex_buffer_;
     const VulkanBuffer& index_buffer_;
     std::uint32_t index_count_ = 0;

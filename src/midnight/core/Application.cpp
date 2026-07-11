@@ -95,6 +95,7 @@ Application::Application()
           vulkan_swapchain_,
           vulkan_render_pass_,
           vulkan_graphics_pipeline_,
+          texture_descriptor_,
           quad_vertex_buffer_,
           quad_index_buffer_,
           static_cast<std::uint32_t>(kQuadIndices.size()),
@@ -153,7 +154,7 @@ void Application::print_startup_info() const
               << "x"
               << window_.pixel_height()
               << '\n';
-    std::cout << "[Midnight] Rendering an indexed quad with UV coordinates\n";
+    std::cout << "[Midnight] Rendering a textured indexed quad\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
 
