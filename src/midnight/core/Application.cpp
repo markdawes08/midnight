@@ -80,6 +80,10 @@ Application::Application()
               .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT
           }
       ),
+      texture_sampler_(
+          vulkan_device_,
+          VulkanSampler::CreateInfo{}
+      ),
       vulkan_frame_renderer_(
           vulkan_device_,
           vulkan_swapchain_,
