@@ -11,6 +11,7 @@
 #include "midnight/renderer/vulkan/VulkanRenderPass.hpp"
 #include "midnight/renderer/vulkan/VulkanSurface.hpp"
 #include "midnight/renderer/vulkan/VulkanSwapchain.hpp"
+#include "midnight/renderer/vulkan/VulkanTransferContext.hpp"
 
 namespace midnight {
 
@@ -35,6 +36,7 @@ private:
     VulkanInstance vulkan_instance_;
     VulkanSurface vulkan_surface_;
     VulkanDevice vulkan_device_;
+    VulkanTransferContext vulkan_transfer_context_;
     VulkanSwapchain vulkan_swapchain_;
     VulkanRenderPass vulkan_render_pass_;
     VulkanGraphicsPipeline vulkan_graphics_pipeline_;

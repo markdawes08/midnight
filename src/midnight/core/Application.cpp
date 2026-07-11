@@ -43,6 +43,7 @@ Application::Application()
       vulkan_instance_(),
       vulkan_surface_(window_, vulkan_instance_),
       vulkan_device_(vulkan_instance_, vulkan_surface_),
+      vulkan_transfer_context_(vulkan_device_),
       vulkan_swapchain_(window_, vulkan_device_, vulkan_surface_),
       vulkan_render_pass_(vulkan_device_, vulkan_swapchain_),
       vulkan_graphics_pipeline_(
@@ -94,6 +95,10 @@ Application::Application()
         kQuadIndices.data(),
         kQuadIndexBufferSize
     );
+
+    vulkan_transfer_context_.execute([](VkCommandBuffer) {});
+
+    std::cout << "[Midnight] Vulkan transfer submission completed\n";
 }
 
 int Application::run()
