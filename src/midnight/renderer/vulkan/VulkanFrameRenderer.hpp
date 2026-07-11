@@ -8,6 +8,7 @@
 
 namespace midnight {
 
+class VulkanBuffer;
 class VulkanDevice;
 class VulkanGraphicsPipeline;
 class VulkanRenderPass;
@@ -19,7 +20,9 @@ public:
         const VulkanDevice& device,
         const VulkanSwapchain& swapchain,
         const VulkanRenderPass& render_pass,
-        const VulkanGraphicsPipeline& graphics_pipeline
+        const VulkanGraphicsPipeline& graphics_pipeline,
+        const VulkanBuffer& vertex_buffer,
+        std::uint32_t vertex_count
     );
 
     ~VulkanFrameRenderer();
@@ -53,6 +56,8 @@ private:
     const VulkanSwapchain& swapchain_;
     const VulkanRenderPass& render_pass_;
     const VulkanGraphicsPipeline& graphics_pipeline_;
+    const VulkanBuffer& vertex_buffer_;
+    std::uint32_t vertex_count_ = 0;
 
     VkCommandPool command_pool_ = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> framebuffers_;

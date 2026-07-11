@@ -1,5 +1,6 @@
 #include "midnight/renderer/vulkan/VulkanFrameRenderer.hpp"
 
+#include "midnight/renderer/vulkan/VulkanBuffer.hpp"
 #include "midnight/renderer/vulkan/VulkanDevice.hpp"
 #include "midnight/renderer/vulkan/VulkanGraphicsPipeline.hpp"
 #include "midnight/renderer/vulkan/VulkanRenderPass.hpp"
@@ -18,12 +19,16 @@ VulkanFrameRenderer::VulkanFrameRenderer(
     const VulkanDevice& device,
     const VulkanSwapchain& swapchain,
     const VulkanRenderPass& render_pass,
-    const VulkanGraphicsPipeline& graphics_pipeline
+    const VulkanGraphicsPipeline& graphics_pipeline,
+    const VulkanBuffer& vertex_buffer,
+    const std::uint32_t vertex_count
 )
     : device_(device),
       swapchain_(swapchain),
       render_pass_(render_pass),
-      graphics_pipeline_(graphics_pipeline)
+      graphics_pipeline_(graphics_pipeline),
+      vertex_buffer_(vertex_buffer),
+      vertex_count_(vertex_count)
 {
     create_command_pool();
     create_framebuffers();
@@ -405,7 +410,23 @@ void VulkanFrameRenderer::record_command_buffer(
         graphics_pipeline_.handle()
     );
 
-    vkCmdDraw(command_buffer, 3, 1, 0, 0);
+    const VkBuffer vertex_buffers[] = {
+        vertex_buffer_.handle()
+    };
+
+    const VkDeviceSize vertex_buffer_offsets[] = {
+        0
+    };
+
+    vkCmdBindVertexBuffers(
+        command_buffer,
+        0,
+        1,
+        vertex_buffers,
+        vertex_buffer_offsets
+    );
+
+    vkCmdDraw(command_buffer, vertex_count_, 1, 0, 0);
 
     vkCmdEndRenderPass(command_buffer);
 

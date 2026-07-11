@@ -285,6 +285,30 @@ std::uint32_t VulkanDevice::present_queue_family_index() const noexcept
     return present_queue_family_index_;
 }
 
+std::uint32_t VulkanDevice::find_memory_type(
+    const std::uint32_t type_filter,
+    const VkMemoryPropertyFlags properties
+) const
+{
+    VkPhysicalDeviceMemoryProperties memory_properties{};
+    vkGetPhysicalDeviceMemoryProperties(
+        physical_device_,
+        &memory_properties
+    );
+
+    for (std::uint32_t index = 0; index < memory_properties.memoryTypeCount; ++index) {
+        const bool type_supported = (type_filter & (1u << index)) != 0;
+        const bool properties_supported =
+            (memory_properties.memoryTypes[index].propertyFlags & properties) == properties;
+
+        if (type_supported && properties_supported) {
+            return index;
+        }
+    }
+
+    throw std::runtime_error("No suitable Vulkan memory type found");
+}
+
 void VulkanDevice::pick_physical_device()
 {
     std::uint32_t physical_device_count = 0;

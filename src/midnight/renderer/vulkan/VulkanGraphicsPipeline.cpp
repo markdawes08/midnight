@@ -1,6 +1,7 @@
 #include "midnight/renderer/vulkan/VulkanGraphicsPipeline.hpp"
 
 #include "midnight/core/File.hpp"
+#include "midnight/renderer/Vertex2D.hpp"
 #include "midnight/renderer/vulkan/VulkanDevice.hpp"
 #include "midnight/renderer/vulkan/VulkanRenderPass.hpp"
 #include "midnight/renderer/vulkan/VulkanSwapchain.hpp"
@@ -150,12 +151,30 @@ void VulkanGraphicsPipeline::create_graphics_pipeline()
         fragment_stage
     };
 
+    VkVertexInputBindingDescription vertex_binding{};
+    vertex_binding.binding = 0;
+    vertex_binding.stride = sizeof(Vertex2D);
+    vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 2> vertex_attributes{};
+
+    vertex_attributes[0].binding = 0;
+    vertex_attributes[0].location = 0;
+    vertex_attributes[0].format = VK_FORMAT_R32G32_SFLOAT;
+    vertex_attributes[0].offset = offsetof(Vertex2D, position_x);
+
+    vertex_attributes[1].binding = 0;
+    vertex_attributes[1].location = 1;
+    vertex_attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_attributes[1].offset = offsetof(Vertex2D, color_r);
+
     VkPipelineVertexInputStateCreateInfo vertex_input{};
     vertex_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input.vertexBindingDescriptionCount = 0;
-    vertex_input.pVertexBindingDescriptions = nullptr;
-    vertex_input.vertexAttributeDescriptionCount = 0;
-    vertex_input.pVertexAttributeDescriptions = nullptr;
+    vertex_input.vertexBindingDescriptionCount = 1;
+    vertex_input.pVertexBindingDescriptions = &vertex_binding;
+    vertex_input.vertexAttributeDescriptionCount =
+        static_cast<std::uint32_t>(vertex_attributes.size());
+    vertex_input.pVertexAttributeDescriptions = vertex_attributes.data();
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;

@@ -29,6 +29,11 @@ public:
     [[nodiscard]] std::uint32_t graphics_queue_family_index() const noexcept;
     [[nodiscard]] std::uint32_t present_queue_family_index() const noexcept;
 
+    [[nodiscard]] std::uint32_t find_memory_type(
+        std::uint32_t type_filter,
+        VkMemoryPropertyFlags properties
+    ) const;
+
 private:
     void pick_physical_device();
     void create_logical_device();

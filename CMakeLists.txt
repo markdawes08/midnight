@@ -57,6 +57,7 @@ add_executable(midnight
     src/midnight/core/File.cpp
     src/midnight/platform/SdlContext.cpp
     src/midnight/platform/Window.cpp
+    src/midnight/renderer/vulkan/VulkanBuffer.cpp
     src/midnight/renderer/vulkan/VulkanDevice.cpp
     src/midnight/renderer/vulkan/VulkanFrameRenderer.cpp
     src/midnight/renderer/vulkan/VulkanGraphicsPipeline.cpp
