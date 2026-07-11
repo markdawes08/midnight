@@ -54,7 +54,7 @@ compile_commands.json
 # Runtime logs, dumps, profiler output, captures
 *.log
 *.dmp
-core
+/core
 core.*
 perf.data*
 *.trace
