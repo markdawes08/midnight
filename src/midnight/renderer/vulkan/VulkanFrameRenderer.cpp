@@ -21,14 +21,18 @@ VulkanFrameRenderer::VulkanFrameRenderer(
     const VulkanRenderPass& render_pass,
     const VulkanGraphicsPipeline& graphics_pipeline,
     const VulkanBuffer& vertex_buffer,
-    const std::uint32_t vertex_count
+    const VulkanBuffer& index_buffer,
+    const std::uint32_t index_count,
+    const VkIndexType index_type
 )
     : device_(device),
       swapchain_(swapchain),
       render_pass_(render_pass),
       graphics_pipeline_(graphics_pipeline),
       vertex_buffer_(vertex_buffer),
-      vertex_count_(vertex_count)
+      index_buffer_(index_buffer),
+      index_count_(index_count),
+      index_type_(index_type)
 {
     create_command_pool();
     create_framebuffers();
@@ -426,7 +430,14 @@ void VulkanFrameRenderer::record_command_buffer(
         vertex_buffer_offsets
     );
 
-    vkCmdDraw(command_buffer, vertex_count_, 1, 0, 0);
+    vkCmdBindIndexBuffer(
+        command_buffer,
+        index_buffer_.handle(),
+        0,
+        index_type_
+    );
+
+    vkCmdDrawIndexed(command_buffer, index_count_, 1, 0, 0, 0);
 
     vkCmdEndRenderPass(command_buffer);
 

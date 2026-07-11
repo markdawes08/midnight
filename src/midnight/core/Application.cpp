@@ -11,14 +11,23 @@
 namespace midnight {
 namespace {
 
-constexpr std::array<Vertex2D, 3> kTriangleVertices{{
-    Vertex2D{ 0.00f, -0.55f, 0.95f, 0.25f, 0.45f },
-    Vertex2D{ 0.55f,  0.45f, 0.25f, 0.90f, 0.70f },
-    Vertex2D{-0.55f,  0.45f, 0.35f, 0.45f, 1.00f }
+constexpr std::array<Vertex2D, 4> kQuadVertices{{
+    Vertex2D{-0.55f, -0.55f, 0.95f, 0.25f, 0.45f },
+    Vertex2D{ 0.55f, -0.55f, 0.25f, 0.90f, 0.70f },
+    Vertex2D{ 0.55f,  0.55f, 0.35f, 0.45f, 1.00f },
+    Vertex2D{-0.55f,  0.55f, 0.95f, 0.80f, 0.25f }
 }};
 
-constexpr VkDeviceSize kTriangleVertexBufferSize =
-    sizeof(Vertex2D) * kTriangleVertices.size();
+constexpr std::array<std::uint16_t, 6> kQuadIndices{{
+    0, 1, 2,
+    2, 3, 0
+}};
+
+constexpr VkDeviceSize kQuadVertexBufferSize =
+    sizeof(Vertex2D) * kQuadVertices.size();
+
+constexpr VkDeviceSize kQuadIndexBufferSize =
+    sizeof(std::uint16_t) * kQuadIndices.size();
 
 }
 
@@ -41,10 +50,17 @@ Application::Application()
           vulkan_swapchain_,
           vulkan_render_pass_
       ),
-      triangle_vertex_buffer_(
+      quad_vertex_buffer_(
           vulkan_device_,
-          kTriangleVertexBufferSize,
+          kQuadVertexBufferSize,
           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+      ),
+      quad_index_buffer_(
+          vulkan_device_,
+          kQuadIndexBufferSize,
+          VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
       ),
@@ -53,13 +69,20 @@ Application::Application()
           vulkan_swapchain_,
           vulkan_render_pass_,
           vulkan_graphics_pipeline_,
-          triangle_vertex_buffer_,
-          static_cast<std::uint32_t>(kTriangleVertices.size())
+          quad_vertex_buffer_,
+          quad_index_buffer_,
+          static_cast<std::uint32_t>(kQuadIndices.size()),
+          VK_INDEX_TYPE_UINT16
       )
 {
-    triangle_vertex_buffer_.upload(
-        kTriangleVertices.data(),
-        kTriangleVertexBufferSize
+    quad_vertex_buffer_.upload(
+        kQuadVertices.data(),
+        kQuadVertexBufferSize
+    );
+
+    quad_index_buffer_.upload(
+        kQuadIndices.data(),
+        kQuadIndexBufferSize
     );
 }
 
@@ -98,7 +121,7 @@ void Application::print_startup_info() const
               << "x"
               << window_.pixel_height()
               << '\n';
-    std::cout << "[Midnight] Rendering a triangle from a Vulkan vertex buffer\n";
+    std::cout << "[Midnight] Rendering an indexed quad\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
 

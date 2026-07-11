@@ -22,7 +22,9 @@ public:
         const VulkanRenderPass& render_pass,
         const VulkanGraphicsPipeline& graphics_pipeline,
         const VulkanBuffer& vertex_buffer,
-        std::uint32_t vertex_count
+        const VulkanBuffer& index_buffer,
+        std::uint32_t index_count,
+        VkIndexType index_type
     );
 
     ~VulkanFrameRenderer();
@@ -57,7 +59,9 @@ private:
     const VulkanRenderPass& render_pass_;
     const VulkanGraphicsPipeline& graphics_pipeline_;
     const VulkanBuffer& vertex_buffer_;
-    std::uint32_t vertex_count_ = 0;
+    const VulkanBuffer& index_buffer_;
+    std::uint32_t index_count_ = 0;
+    VkIndexType index_type_ = VK_INDEX_TYPE_UINT16;
 
     VkCommandPool command_pool_ = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> framebuffers_;

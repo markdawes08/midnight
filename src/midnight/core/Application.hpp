@@ -37,7 +37,8 @@ private:
     VulkanSwapchain vulkan_swapchain_;
     VulkanRenderPass vulkan_render_pass_;
     VulkanGraphicsPipeline vulkan_graphics_pipeline_;
-    VulkanBuffer triangle_vertex_buffer_;
+    VulkanBuffer quad_vertex_buffer_;
+    VulkanBuffer quad_index_buffer_;
     VulkanFrameRenderer vulkan_frame_renderer_;
 
     bool running_ = true;
