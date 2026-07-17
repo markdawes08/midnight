@@ -19,11 +19,51 @@ constexpr std::uint32_t kInitialWindowWidth = 1280;
 constexpr std::uint32_t kInitialWindowHeight = 720;
 constexpr std::uint32_t kOutdoorTilesetWidth = 192;
 constexpr std::uint32_t kOutdoorTilesetHeight = 128;
+constexpr std::uint32_t kTilesetTileWidth = 16;
+constexpr std::uint32_t kTilesetTileHeight = 16;
+constexpr std::uint32_t kOutdoorTilesetColumns =
+    kOutdoorTilesetWidth / kTilesetTileWidth;
+constexpr std::uint32_t kOutdoorTilesetRows =
+    kOutdoorTilesetHeight / kTilesetTileHeight;
 constexpr std::uint32_t kTilesetPreviewScale = 3;
+constexpr std::uint32_t kSelectedTileColumn = 1;
+constexpr std::uint32_t kSelectedTileRow = 0;
+constexpr std::uint32_t kSelectedTilePreviewScale = 4;
 constexpr std::size_t kOutdoorTilesetByteSize =
     static_cast<std::size_t>(kOutdoorTilesetWidth) *
     static_cast<std::size_t>(kOutdoorTilesetHeight) *
     RgbaImage::bytes_per_pixel;
+
+static_assert(kOutdoorTilesetWidth % kTilesetTileWidth == 0);
+static_assert(kOutdoorTilesetHeight % kTilesetTileHeight == 0);
+static_assert(kSelectedTileColumn < kOutdoorTilesetColumns);
+static_assert(kSelectedTileRow < kOutdoorTilesetRows);
+
+struct TextureRegion final {
+    float left = 0.0f;
+    float top = 0.0f;
+    float right = 0.0f;
+    float bottom = 0.0f;
+};
+
+constexpr TextureRegion tile_texture_region(
+    const std::uint32_t column,
+    const std::uint32_t row
+)
+{
+    return TextureRegion{
+        .left = static_cast<float>(column * kTilesetTileWidth) /
+            static_cast<float>(kOutdoorTilesetWidth),
+        .top = static_cast<float>(row * kTilesetTileHeight) /
+            static_cast<float>(kOutdoorTilesetHeight),
+        .right =
+            static_cast<float>((column + 1) * kTilesetTileWidth) /
+            static_cast<float>(kOutdoorTilesetWidth),
+        .bottom =
+            static_cast<float>((row + 1) * kTilesetTileHeight) /
+            static_cast<float>(kOutdoorTilesetHeight)
+    };
+}
 
 constexpr float kTilesetPreviewHalfWidth =
     static_cast<float>(kOutdoorTilesetWidth * kTilesetPreviewScale) /
@@ -33,16 +73,58 @@ constexpr float kTilesetPreviewHalfHeight =
     static_cast<float>(kOutdoorTilesetHeight * kTilesetPreviewScale) /
     static_cast<float>(kInitialWindowHeight);
 
-constexpr std::array<Vertex2D, 4> kQuadVertices{{
+constexpr float kSelectedTilePreviewCenterX = 0.65f;
+constexpr float kSelectedTilePreviewHalfWidth =
+    static_cast<float>(kTilesetTileWidth * kSelectedTilePreviewScale) /
+    static_cast<float>(kInitialWindowWidth);
+
+constexpr float kSelectedTilePreviewHalfHeight =
+    static_cast<float>(kTilesetTileHeight * kSelectedTilePreviewScale) /
+    static_cast<float>(kInitialWindowHeight);
+
+constexpr TextureRegion kSelectedTileTextureRegion =
+    tile_texture_region(kSelectedTileColumn, kSelectedTileRow);
+
+constexpr std::array<Vertex2D, 8> kQuadVertices{{
     Vertex2D{-kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
     Vertex2D{ kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
     Vertex2D{ kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-    Vertex2D{-kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f}
+    Vertex2D{-kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f},
+    Vertex2D{
+        kSelectedTilePreviewCenterX - kSelectedTilePreviewHalfWidth,
+        -kSelectedTilePreviewHalfHeight,
+        1.0f, 1.0f, 1.0f,
+        kSelectedTileTextureRegion.left,
+        kSelectedTileTextureRegion.top
+    },
+    Vertex2D{
+        kSelectedTilePreviewCenterX + kSelectedTilePreviewHalfWidth,
+        -kSelectedTilePreviewHalfHeight,
+        1.0f, 1.0f, 1.0f,
+        kSelectedTileTextureRegion.right,
+        kSelectedTileTextureRegion.top
+    },
+    Vertex2D{
+        kSelectedTilePreviewCenterX + kSelectedTilePreviewHalfWidth,
+        kSelectedTilePreviewHalfHeight,
+        1.0f, 1.0f, 1.0f,
+        kSelectedTileTextureRegion.right,
+        kSelectedTileTextureRegion.bottom
+    },
+    Vertex2D{
+        kSelectedTilePreviewCenterX - kSelectedTilePreviewHalfWidth,
+        kSelectedTilePreviewHalfHeight,
+        1.0f, 1.0f, 1.0f,
+        kSelectedTileTextureRegion.left,
+        kSelectedTileTextureRegion.bottom
+    }
 }};
 
-constexpr std::array<std::uint16_t, 6> kQuadIndices{{
+constexpr std::array<std::uint16_t, 12> kQuadIndices{{
     0, 1, 2,
-    2, 3, 0
+    2, 3, 0,
+    4, 5, 6,
+    6, 7, 4
 }};
 
 constexpr VkDeviceSize kQuadVertexBufferSize =
@@ -215,9 +297,24 @@ void Application::print_startup_info() const
               << "x"
               << window_.pixel_height()
               << '\n';
+    std::cout << "[Midnight] Outdoor tileset grid: "
+              << kOutdoorTilesetColumns
+              << "x"
+              << kOutdoorTilesetRows
+              << " tiles at "
+              << kTilesetTileWidth
+              << "x"
+              << kTilesetTileHeight
+              << " pixels\n";
     std::cout << "[Midnight] Rendering the outdoor tileset at "
               << kTilesetPreviewScale
-              << "x scale\n";
+              << "x and tile ("
+              << kSelectedTileColumn
+              << ", "
+              << kSelectedTileRow
+              << ") at "
+              << kSelectedTilePreviewScale
+              << "x\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
 
