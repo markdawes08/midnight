@@ -265,6 +265,11 @@ VkDevice VulkanDevice::handle() const noexcept
     return device_;
 }
 
+void VulkanDevice::wait_idle() const
+{
+    throw_if_vk_failed(vkDeviceWaitIdle(device_), "vkDeviceWaitIdle");
+}
+
 VkQueue VulkanDevice::graphics_queue() const noexcept
 {
     return graphics_queue_;

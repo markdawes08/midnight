@@ -23,6 +23,8 @@ public:
     [[nodiscard]] VkPhysicalDevice physical_device() const noexcept;
     [[nodiscard]] VkDevice handle() const noexcept;
 
+    void wait_idle() const;
+
     [[nodiscard]] VkQueue graphics_queue() const noexcept;
     [[nodiscard]] VkQueue present_queue() const noexcept;
 

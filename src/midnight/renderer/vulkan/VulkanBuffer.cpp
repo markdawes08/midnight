@@ -3,6 +3,7 @@
 #include "midnight/renderer/vulkan/VulkanDevice.hpp"
 #include "midnight/renderer/vulkan/VulkanUtils.hpp"
 
+#include <cstddef>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
@@ -126,15 +127,19 @@ void VulkanBuffer::upload(
         vkMapMemory(
             device_.handle(),
             memory_,
-            destination_offset,
-            byte_size,
+            0,
+            VK_WHOLE_SIZE,
             0,
             &mapped_memory
         ),
         "vkMapMemory"
     );
 
-    std::memcpy(mapped_memory, source, static_cast<std::size_t>(byte_size));
+    auto* destination =
+        static_cast<std::byte*>(mapped_memory) +
+        static_cast<std::size_t>(destination_offset);
+
+    std::memcpy(destination, source, static_cast<std::size_t>(byte_size));
 
     vkUnmapMemory(device_.handle(), memory_);
 }

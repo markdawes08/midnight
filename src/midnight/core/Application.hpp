@@ -15,6 +15,8 @@
 #include "midnight/renderer/vulkan/VulkanTextureDescriptor.hpp"
 #include "midnight/renderer/vulkan/VulkanTransferContext.hpp"
 
+#include <cstdint>
+
 namespace midnight {
 
 class Application final {
@@ -32,6 +34,8 @@ public:
 private:
     void print_startup_info() const;
     void poll_events();
+    void move_tile_selection(int column_delta, int row_delta);
+    void upload_selected_tile_preview_vertices();
 
     SdlContext sdl_;
     Window window_;
@@ -49,6 +53,8 @@ private:
     VulkanTextureDescriptor texture_descriptor_;
     VulkanFrameRenderer vulkan_frame_renderer_;
 
+    std::uint32_t selected_tile_column_ = 0;
+    std::uint32_t selected_tile_row_ = 0;
     bool running_ = true;
 };
 

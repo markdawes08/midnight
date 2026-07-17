@@ -5,6 +5,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -26,8 +27,8 @@ constexpr std::uint32_t kOutdoorTilesetColumns =
 constexpr std::uint32_t kOutdoorTilesetRows =
     kOutdoorTilesetHeight / kTilesetTileHeight;
 constexpr std::uint32_t kTilesetPreviewScale = 3;
-constexpr std::uint32_t kSelectedTileColumn = 1;
-constexpr std::uint32_t kSelectedTileRow = 0;
+constexpr std::uint32_t kInitialSelectedTileColumn = 1;
+constexpr std::uint32_t kInitialSelectedTileRow = 0;
 constexpr std::uint32_t kSelectedTilePreviewScale = 4;
 constexpr std::size_t kOutdoorTilesetByteSize =
     static_cast<std::size_t>(kOutdoorTilesetWidth) *
@@ -36,8 +37,8 @@ constexpr std::size_t kOutdoorTilesetByteSize =
 
 static_assert(kOutdoorTilesetWidth % kTilesetTileWidth == 0);
 static_assert(kOutdoorTilesetHeight % kTilesetTileHeight == 0);
-static_assert(kSelectedTileColumn < kOutdoorTilesetColumns);
-static_assert(kSelectedTileRow < kOutdoorTilesetRows);
+static_assert(kInitialSelectedTileColumn < kOutdoorTilesetColumns);
+static_assert(kInitialSelectedTileRow < kOutdoorTilesetRows);
 
 struct TextureRegion final {
     float left = 0.0f;
@@ -82,43 +83,55 @@ constexpr float kSelectedTilePreviewHalfHeight =
     static_cast<float>(kTilesetTileHeight * kSelectedTilePreviewScale) /
     static_cast<float>(kInitialWindowHeight);
 
-constexpr TextureRegion kSelectedTileTextureRegion =
-    tile_texture_region(kSelectedTileColumn, kSelectedTileRow);
-
-constexpr std::array<Vertex2D, 8> kQuadVertices{{
+constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
     Vertex2D{-kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
     Vertex2D{ kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
     Vertex2D{ kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-    Vertex2D{-kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f},
-    Vertex2D{
-        kSelectedTilePreviewCenterX - kSelectedTilePreviewHalfWidth,
-        -kSelectedTilePreviewHalfHeight,
-        1.0f, 1.0f, 1.0f,
-        kSelectedTileTextureRegion.left,
-        kSelectedTileTextureRegion.top
-    },
-    Vertex2D{
-        kSelectedTilePreviewCenterX + kSelectedTilePreviewHalfWidth,
-        -kSelectedTilePreviewHalfHeight,
-        1.0f, 1.0f, 1.0f,
-        kSelectedTileTextureRegion.right,
-        kSelectedTileTextureRegion.top
-    },
-    Vertex2D{
-        kSelectedTilePreviewCenterX + kSelectedTilePreviewHalfWidth,
-        kSelectedTilePreviewHalfHeight,
-        1.0f, 1.0f, 1.0f,
-        kSelectedTileTextureRegion.right,
-        kSelectedTileTextureRegion.bottom
-    },
-    Vertex2D{
-        kSelectedTilePreviewCenterX - kSelectedTilePreviewHalfWidth,
-        kSelectedTilePreviewHalfHeight,
-        1.0f, 1.0f, 1.0f,
-        kSelectedTileTextureRegion.left,
-        kSelectedTileTextureRegion.bottom
-    }
+    Vertex2D{-kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f}
 }};
+
+constexpr std::array<Vertex2D, 4> make_selected_tile_preview_vertices(
+    const std::uint32_t selected_column,
+    const std::uint32_t selected_row
+)
+{
+    const TextureRegion selected_region =
+        tile_texture_region(selected_column, selected_row);
+
+    return {{
+        Vertex2D{
+            kSelectedTilePreviewCenterX - kSelectedTilePreviewHalfWidth,
+            -kSelectedTilePreviewHalfHeight,
+            1.0f, 1.0f, 1.0f,
+            selected_region.left,
+            selected_region.top
+        },
+        Vertex2D{
+            kSelectedTilePreviewCenterX + kSelectedTilePreviewHalfWidth,
+            -kSelectedTilePreviewHalfHeight,
+            1.0f, 1.0f, 1.0f,
+            selected_region.right,
+            selected_region.top
+        },
+        Vertex2D{
+            kSelectedTilePreviewCenterX + kSelectedTilePreviewHalfWidth,
+            kSelectedTilePreviewHalfHeight,
+            1.0f, 1.0f, 1.0f,
+            selected_region.right,
+            selected_region.bottom
+        },
+        Vertex2D{
+            kSelectedTilePreviewCenterX - kSelectedTilePreviewHalfWidth,
+            kSelectedTilePreviewHalfHeight,
+            1.0f, 1.0f, 1.0f,
+            selected_region.left,
+            selected_region.bottom
+        }
+    }};
+}
+
+constexpr std::size_t kQuadVertexCount =
+    kTilesetPreviewVertices.size() + 4;
 
 constexpr std::array<std::uint16_t, 12> kQuadIndices{{
     0, 1, 2,
@@ -128,7 +141,7 @@ constexpr std::array<std::uint16_t, 12> kQuadIndices{{
 }};
 
 constexpr VkDeviceSize kQuadVertexBufferSize =
-    sizeof(Vertex2D) * kQuadVertices.size();
+    sizeof(Vertex2D) * kQuadVertexCount;
 
 constexpr VkDeviceSize kQuadIndexBufferSize =
     sizeof(std::uint16_t) * kQuadIndices.size();
@@ -202,12 +215,16 @@ Application::Application()
           quad_index_buffer_,
           static_cast<std::uint32_t>(kQuadIndices.size()),
           VK_INDEX_TYPE_UINT16
-      )
+      ),
+      selected_tile_column_(kInitialSelectedTileColumn),
+      selected_tile_row_(kInitialSelectedTileRow)
 {
     quad_vertex_buffer_.upload(
-        kQuadVertices.data(),
-        kQuadVertexBufferSize
+        kTilesetPreviewVertices.data(),
+        sizeof(kTilesetPreviewVertices)
     );
+
+    upload_selected_tile_preview_vertices();
 
     quad_index_buffer_.upload(
         kQuadIndices.data(),
@@ -309,12 +326,13 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Rendering the outdoor tileset at "
               << kTilesetPreviewScale
               << "x and tile ("
-              << kSelectedTileColumn
+              << selected_tile_column_
               << ", "
-              << kSelectedTileRow
+              << selected_tile_row_
               << ") at "
               << kSelectedTilePreviewScale
               << "x\n";
+    std::cout << "[Midnight] Use the arrow keys to select a tile\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
 
@@ -329,8 +347,29 @@ void Application::poll_events()
                 break;
 
             case SDL_EVENT_KEY_DOWN:
-                if (event.key.key == SDLK_ESCAPE) {
-                    running_ = false;
+                switch (event.key.key) {
+                    case SDLK_ESCAPE:
+                        running_ = false;
+                        break;
+
+                    case SDLK_LEFT:
+                        move_tile_selection(-1, 0);
+                        break;
+
+                    case SDLK_RIGHT:
+                        move_tile_selection(1, 0);
+                        break;
+
+                    case SDLK_UP:
+                        move_tile_selection(0, -1);
+                        break;
+
+                    case SDLK_DOWN:
+                        move_tile_selection(0, 1);
+                        break;
+
+                    default:
+                        break;
                 }
                 break;
 
@@ -352,6 +391,57 @@ void Application::poll_events()
                 break;
         }
     }
+}
+
+void Application::move_tile_selection(
+    const int column_delta,
+    const int row_delta
+)
+{
+    const int next_column = std::clamp(
+        static_cast<int>(selected_tile_column_) + column_delta,
+        0,
+        static_cast<int>(kOutdoorTilesetColumns) - 1
+    );
+
+    const int next_row = std::clamp(
+        static_cast<int>(selected_tile_row_) + row_delta,
+        0,
+        static_cast<int>(kOutdoorTilesetRows) - 1
+    );
+
+    if (next_column == static_cast<int>(selected_tile_column_) &&
+        next_row == static_cast<int>(selected_tile_row_)) {
+        return;
+    }
+
+    vulkan_device_.wait_idle();
+
+    selected_tile_column_ = static_cast<std::uint32_t>(next_column);
+    selected_tile_row_ = static_cast<std::uint32_t>(next_row);
+
+    upload_selected_tile_preview_vertices();
+
+    std::cout << "[Midnight] Selected tile: ("
+              << selected_tile_column_
+              << ", "
+              << selected_tile_row_
+              << ")\n";
+}
+
+void Application::upload_selected_tile_preview_vertices()
+{
+    const std::array<Vertex2D, 4> vertices =
+        make_selected_tile_preview_vertices(
+            selected_tile_column_,
+            selected_tile_row_
+        );
+
+    quad_vertex_buffer_.upload(
+        vertices.data(),
+        sizeof(vertices),
+        sizeof(kTilesetPreviewVertices)
+    );
 }
 
 }
