@@ -68,6 +68,7 @@ private:
     void undo_map_edit();
     void redo_map_edit();
     void flood_fill_map();
+    void delete_selected_map_area();
     [[nodiscard]] bool begin_map_rectangle_paint(float x, float y);
     void update_map_rectangle_paint(float x, float y);
     void apply_map_rectangle_paint();

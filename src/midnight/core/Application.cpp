@@ -1421,6 +1421,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Left-click or drag across the map to paint the selected region\n";
     std::cout << "[Midnight] Hold Shift and left-drag to paint a filled rectangle\n";
     std::cout << "[Midnight] Hold Ctrl and left-drag to select a rectangular map area\n";
+    std::cout << "[Midnight] Press Delete to clear the selected map area\n";
     std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
     std::cout << "[Midnight] Press F over the map to flood-fill with a 1x1 selection\n";
@@ -1541,6 +1542,12 @@ void Application::poll_events()
                         if (!event.key.repeat) {
                             flush_pending_map_hover();
                             flood_fill_map();
+                        }
+                        break;
+
+                    case SDLK_DELETE:
+                        if (!event.key.repeat) {
+                            delete_selected_map_area();
                         }
                         break;
 
@@ -2074,6 +2081,85 @@ void Application::flood_fill_map()
               << replacement.tileset_column
               << ", "
               << replacement.tileset_row
+              << ")\n";
+}
+
+void Application::delete_selected_map_area()
+{
+    if (!map_area_selection_visible_) {
+        std::cout << "[Midnight] No map area selected\n";
+        return;
+    }
+
+    if (tile_selection_dragging_ ||
+        map_paint_dragging_ ||
+        map_rectangle_dragging_ ||
+        map_area_selection_dragging_ ||
+        map_erase_dragging_ ||
+        map_edit_active_) {
+        return;
+    }
+
+    std::size_t deleted_cell_count = 0;
+
+    for (std::uint32_t row = map_area_selection_top_;
+         row <= map_area_selection_bottom_;
+         ++row) {
+        for (std::uint32_t column = map_area_selection_left_;
+             column <= map_area_selection_right_;
+             ++column) {
+            const std::size_t cell_index =
+                static_cast<std::size_t>(row) *
+                    kMapCanvasColumns +
+                column;
+
+            if (map_tiles_.at(cell_index).occupied) {
+                ++deleted_cell_count;
+            }
+        }
+    }
+
+    if (deleted_cell_count == 0) {
+        std::cout << "[Midnight] Selected map area is already empty\n";
+        return;
+    }
+
+    begin_map_edit();
+    wait_for_rendering_resources();
+
+    for (std::uint32_t row = map_area_selection_top_;
+         row <= map_area_selection_bottom_;
+         ++row) {
+        for (std::uint32_t column = map_area_selection_left_;
+             column <= map_area_selection_right_;
+             ++column) {
+            const std::size_t cell_index =
+                static_cast<std::size_t>(row) *
+                    kMapCanvasColumns +
+                column;
+            MapTile& map_tile = map_tiles_.at(cell_index);
+
+            if (!map_tile.occupied) {
+                continue;
+            }
+
+            map_tile = MapTile{};
+            upload_map_tile_vertices(column, row);
+        }
+    }
+
+    finish_map_edit();
+
+    std::cout << "[Midnight] Deleted "
+              << deleted_cell_count
+              << " painted map cells from selected area ("
+              << map_area_selection_left_
+              << ", "
+              << map_area_selection_top_
+              << ") to ("
+              << map_area_selection_right_
+              << ", "
+              << map_area_selection_bottom_
               << ")\n";
 }
 
