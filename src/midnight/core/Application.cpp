@@ -1089,7 +1089,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Use the arrow keys, click, or drag across the atlas to select tiles\n";
     std::cout << "[Midnight] Move the cursor across the map to highlight cells\n";
     std::cout << "[Midnight] Left-click or drag across the map to paint the selection's top-left tile\n";
-    std::cout << "[Midnight] Right-click the map to erase one tile\n";
+    std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
@@ -1189,7 +1189,8 @@ void Application::poll_events()
                 pending_map_hover_y = event.button.y;
                 map_hover_update_pending = true;
 
-                if (event.button.button == SDL_BUTTON_LEFT) {
+                if (event.button.button == SDL_BUTTON_LEFT &&
+                    !map_erase_dragging_) {
                     flush_pending_tile_selection_drag();
                     map_paint_dragging_ = false;
                     map_paint_dragging_ = paint_map_tile(
@@ -1203,8 +1204,11 @@ void Application::poll_events()
                             event.button.y
                         );
                     }
-                } else if (event.button.button == SDL_BUTTON_RIGHT) {
-                    erase_map_tile(
+                } else if (event.button.button == SDL_BUTTON_RIGHT &&
+                           !map_paint_dragging_ &&
+                           !tile_selection_dragging_) {
+                    map_erase_dragging_ = false;
+                    map_erase_dragging_ = erase_map_tile(
                         event.button.x,
                         event.button.y
                     );
@@ -1220,6 +1224,17 @@ void Application::poll_events()
                         );
                     } else {
                         map_paint_dragging_ = false;
+                    }
+                }
+
+                if (map_erase_dragging_) {
+                    if ((event.motion.state & SDL_BUTTON_RMASK) != 0) {
+                        (void)erase_map_tile(
+                            event.motion.x,
+                            event.motion.y
+                        );
+                    } else {
+                        map_erase_dragging_ = false;
                     }
                 }
 
@@ -1261,6 +1276,15 @@ void Application::poll_events()
                         event.button.x,
                         event.button.y
                     );
+                } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                    if (map_erase_dragging_) {
+                        (void)erase_map_tile(
+                            event.button.x,
+                            event.button.y
+                        );
+                    }
+
+                    map_erase_dragging_ = false;
                 }
                 break;
 
@@ -1291,6 +1315,7 @@ void Application::poll_events()
                 }
 
                 map_paint_dragging_ = false;
+                map_erase_dragging_ = false;
                 map_hover_update_pending = false;
                 clear_map_hover();
                 break;
@@ -1372,7 +1397,7 @@ bool Application::paint_map_tile(
     return true;
 }
 
-void Application::erase_map_tile(
+bool Application::erase_map_tile(
     const float x,
     const float y
 )
@@ -1386,8 +1411,17 @@ void Application::erase_map_tile(
             column,
             row
         )) {
-        return;
+        return false;
     }
+
+    if (map_erase_dragging_ &&
+        column == last_map_erase_column_ &&
+        row == last_map_erase_row_) {
+        return true;
+    }
+
+    last_map_erase_column_ = column;
+    last_map_erase_row_ = row;
 
     const std::size_t cell_index =
         static_cast<std::size_t>(row) * kMapCanvasColumns +
@@ -1395,7 +1429,7 @@ void Application::erase_map_tile(
     MapTile& map_tile = map_tiles_.at(cell_index);
 
     if (!map_tile.occupied) {
-        return;
+        return true;
     }
 
     vulkan_device_.wait_idle();
@@ -1408,6 +1442,8 @@ void Application::erase_map_tile(
               << ", "
               << row
               << ")\n";
+
+    return true;
 }
 
 void Application::upload_map_tile_vertices(
