@@ -34,6 +34,15 @@ public:
 private:
     void print_startup_info() const;
     void poll_events();
+    void update_map_hover(float x, float y);
+    void clear_map_hover();
+    [[nodiscard]] bool window_position_to_map_cell(
+        float x,
+        float y,
+        std::uint32_t& column,
+        std::uint32_t& row
+    ) const;
+    void upload_map_hover_vertices();
     void toggle_tileset_grid();
     void upload_tileset_grid_vertices();
     void move_tile_selection(int column_delta, int row_delta);
@@ -78,8 +87,11 @@ private:
     std::uint32_t selected_tile_bottom_ = 0;
     std::uint32_t tile_selection_drag_anchor_column_ = 0;
     std::uint32_t tile_selection_drag_anchor_row_ = 0;
+    std::uint32_t hovered_map_column_ = 0;
+    std::uint32_t hovered_map_row_ = 0;
     bool tileset_grid_visible_ = true;
     bool tile_selection_dragging_ = false;
+    bool map_hover_visible_ = false;
     bool running_ = true;
 };
 

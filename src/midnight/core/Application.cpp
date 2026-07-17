@@ -149,6 +149,10 @@ constexpr float kMapCanvasBlue = 0.12f;
 constexpr float kMapGridRed = 0.24f;
 constexpr float kMapGridGreen = 0.27f;
 constexpr float kMapGridBlue = 0.38f;
+constexpr std::uint32_t kMapHoverOutlineThickness = 2;
+constexpr float kMapHoverRed = 0.10f;
+constexpr float kMapHoverGreen = 0.85f;
+constexpr float kMapHoverBlue = 1.0f;
 
 constexpr float kGridLineWidth =
     (2.0f * static_cast<float>(kGridLineThickness)) /
@@ -156,6 +160,14 @@ constexpr float kGridLineWidth =
 
 constexpr float kGridLineHeight =
     (2.0f * static_cast<float>(kGridLineThickness)) /
+    static_cast<float>(kInitialWindowHeight);
+
+constexpr float kMapHoverOutlineWidth =
+    (2.0f * static_cast<float>(kMapHoverOutlineThickness)) /
+    static_cast<float>(kInitialWindowWidth);
+
+constexpr float kMapHoverOutlineHeight =
+    (2.0f * static_cast<float>(kMapHoverOutlineThickness)) /
     static_cast<float>(kInitialWindowHeight);
 
 constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
@@ -196,6 +208,20 @@ constexpr Vertex2D selection_outline_vertex(
         kSelectionOutlineRed,
         kSelectionOutlineGreen,
         kSelectionOutlineBlue
+    );
+}
+
+constexpr Vertex2D map_hover_vertex(
+    const float position_x,
+    const float position_y
+)
+{
+    return solid_color_vertex(
+        position_x,
+        position_y,
+        kMapHoverRed,
+        kMapHoverGreen,
+        kMapHoverBlue
     );
 }
 
@@ -422,6 +448,44 @@ constexpr MapCanvasVertices make_map_canvas_vertices()
 constexpr MapCanvasVertices kMapCanvasVertices =
     make_map_canvas_vertices();
 
+constexpr std::size_t kMapHoverVertexCount = 8;
+
+using MapHoverVertices =
+    std::array<Vertex2D, kMapHoverVertexCount>;
+
+constexpr MapHoverVertices make_map_hover_vertices(
+    const std::uint32_t column,
+    const std::uint32_t row
+)
+{
+    const float left =
+        kMapCanvasLeft +
+        static_cast<float>(column) * kMapCanvasCellWidth;
+    const float top =
+        kMapCanvasTop +
+        static_cast<float>(row) * kMapCanvasCellHeight;
+    const float right = left + kMapCanvasCellWidth;
+    const float bottom = top + kMapCanvasCellHeight;
+
+    const float inner_left = left + kMapHoverOutlineWidth;
+    const float inner_top = top + kMapHoverOutlineHeight;
+    const float inner_right = right - kMapHoverOutlineWidth;
+    const float inner_bottom = bottom - kMapHoverOutlineHeight;
+
+    return {{
+        map_hover_vertex(left, top),
+        map_hover_vertex(right, top),
+        map_hover_vertex(right, bottom),
+        map_hover_vertex(left, bottom),
+        map_hover_vertex(inner_left, inner_top),
+        map_hover_vertex(inner_right, inner_top),
+        map_hover_vertex(inner_right, inner_bottom),
+        map_hover_vertex(inner_left, inner_bottom)
+    }};
+}
+
+constexpr MapHoverVertices kHiddenMapHoverVertices{};
+
 constexpr std::size_t kTileSelectionVertexCount = 12;
 
 constexpr std::uint32_t selected_region_preview_scale(
@@ -556,7 +620,8 @@ constexpr std::size_t kQuadVertexCount =
     kTilesetPreviewVertices.size() +
     kTilesetGridVertices.size() +
     kMapCanvasVertices.size() +
-    kTileSelectionVertexCount;
+    kTileSelectionVertexCount +
+    kMapHoverVertexCount;
 
 constexpr std::size_t kTilesetGridVertexByteOffset =
     sizeof(kTilesetPreviewVertices);
@@ -570,12 +635,17 @@ constexpr std::size_t kTileSelectionVertexByteOffset =
     sizeof(kTilesetGridVertices) +
     sizeof(kMapCanvasVertices);
 
+constexpr std::size_t kMapHoverVertexByteOffset =
+    kTileSelectionVertexByteOffset +
+    sizeof(Vertex2D) * kTileSelectionVertexCount;
+
 constexpr std::size_t kQuadIndexCount =
     (
         1 +
         kTilesetGridLineCount +
         kMapCanvasQuadCount +
         1 +
+        4 +
         4
     ) * 6;
 
@@ -593,6 +663,43 @@ constexpr void append_quad_indices(
     indices[next_index++] = first_vertex + 2;
     indices[next_index++] = first_vertex + 3;
     indices[next_index++] = first_vertex;
+}
+
+constexpr void append_outline_indices(
+    QuadIndices& indices,
+    std::size_t& next_index,
+    const std::uint16_t outer
+)
+{
+    const std::uint16_t inner = outer + 4;
+
+    indices[next_index++] = outer;
+    indices[next_index++] = outer + 1;
+    indices[next_index++] = inner + 1;
+    indices[next_index++] = inner + 1;
+    indices[next_index++] = inner;
+    indices[next_index++] = outer;
+
+    indices[next_index++] = outer + 1;
+    indices[next_index++] = outer + 2;
+    indices[next_index++] = inner + 2;
+    indices[next_index++] = inner + 2;
+    indices[next_index++] = inner + 1;
+    indices[next_index++] = outer + 1;
+
+    indices[next_index++] = outer + 2;
+    indices[next_index++] = outer + 3;
+    indices[next_index++] = inner + 3;
+    indices[next_index++] = inner + 3;
+    indices[next_index++] = inner + 2;
+    indices[next_index++] = outer + 2;
+
+    indices[next_index++] = outer + 3;
+    indices[next_index++] = outer;
+    indices[next_index++] = inner;
+    indices[next_index++] = inner;
+    indices[next_index++] = inner + 3;
+    indices[next_index++] = outer + 3;
 }
 
 constexpr QuadIndices make_quad_indices()
@@ -648,38 +755,21 @@ constexpr QuadIndices make_quad_indices()
         selection_first_vertex
     );
 
-    const std::uint16_t outline_outer =
-        selection_first_vertex + 4;
-    const std::uint16_t outline_inner =
-        outline_outer + 4;
+    append_outline_indices(
+        indices,
+        next_index,
+        selection_first_vertex + 4
+    );
 
-    indices[next_index++] = outline_outer;
-    indices[next_index++] = outline_outer + 1;
-    indices[next_index++] = outline_inner + 1;
-    indices[next_index++] = outline_inner + 1;
-    indices[next_index++] = outline_inner;
-    indices[next_index++] = outline_outer;
+    const std::uint16_t map_hover_first_vertex =
+        selection_first_vertex +
+        static_cast<std::uint16_t>(kTileSelectionVertexCount);
 
-    indices[next_index++] = outline_outer + 1;
-    indices[next_index++] = outline_outer + 2;
-    indices[next_index++] = outline_inner + 2;
-    indices[next_index++] = outline_inner + 2;
-    indices[next_index++] = outline_inner + 1;
-    indices[next_index++] = outline_outer + 1;
-
-    indices[next_index++] = outline_outer + 2;
-    indices[next_index++] = outline_outer + 3;
-    indices[next_index++] = outline_inner + 3;
-    indices[next_index++] = outline_inner + 3;
-    indices[next_index++] = outline_inner + 2;
-    indices[next_index++] = outline_outer + 2;
-
-    indices[next_index++] = outline_outer + 3;
-    indices[next_index++] = outline_outer;
-    indices[next_index++] = outline_inner;
-    indices[next_index++] = outline_inner;
-    indices[next_index++] = outline_inner + 3;
-    indices[next_index++] = outline_outer + 3;
+    append_outline_indices(
+        indices,
+        next_index,
+        map_hover_first_vertex
+    );
 
     return indices;
 }
@@ -781,6 +871,7 @@ Application::Application()
     );
 
     upload_tile_selection_vertices();
+    upload_map_hover_vertices();
 
     quad_index_buffer_.upload(
         kQuadIndices.data(),
@@ -891,6 +982,7 @@ void Application::print_startup_info() const
               << "x\n";
     print_tile_selection();
     std::cout << "[Midnight] Use the arrow keys, click, or drag across the atlas to select tiles\n";
+    std::cout << "[Midnight] Move the cursor across the map to highlight cells\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
@@ -901,6 +993,9 @@ void Application::poll_events()
     bool tile_selection_drag_update_pending = false;
     float pending_tile_selection_drag_x = 0.0f;
     float pending_tile_selection_drag_y = 0.0f;
+    bool map_hover_update_pending = false;
+    float pending_map_hover_x = 0.0f;
+    float pending_map_hover_y = 0.0f;
 
     const auto flush_pending_tile_selection_drag = [&]() {
         if (!tile_selection_dragging_ ||
@@ -913,6 +1008,32 @@ void Application::poll_events()
             pending_tile_selection_drag_x,
             pending_tile_selection_drag_y
         );
+    };
+
+    const auto flush_pending_map_hover = [&]() {
+        if (!map_hover_update_pending) {
+            return;
+        }
+
+        map_hover_update_pending = false;
+        update_map_hover(
+            pending_map_hover_x,
+            pending_map_hover_y
+        );
+    };
+
+    const auto queue_current_map_hover = [&]() {
+        if (SDL_GetMouseFocus() != window_.sdl_handle()) {
+            map_hover_update_pending = false;
+            clear_map_hover();
+            return;
+        }
+
+        (void)SDL_GetMouseState(
+            &pending_map_hover_x,
+            &pending_map_hover_y
+        );
+        map_hover_update_pending = true;
     };
 
     while (SDL_PollEvent(&event)) {
@@ -957,6 +1078,10 @@ void Application::poll_events()
                 break;
 
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                pending_map_hover_x = event.button.x;
+                pending_map_hover_y = event.button.y;
+                map_hover_update_pending = true;
+
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     flush_pending_tile_selection_drag();
                     begin_tile_selection_drag(
@@ -980,9 +1105,17 @@ void Application::poll_events()
                         );
                     }
                 }
+
+                pending_map_hover_x = event.motion.x;
+                pending_map_hover_y = event.motion.y;
+                map_hover_update_pending = true;
                 break;
 
             case SDL_EVENT_MOUSE_BUTTON_UP:
+                pending_map_hover_x = event.button.x;
+                pending_map_hover_y = event.button.y;
+                map_hover_update_pending = true;
+
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     tile_selection_drag_update_pending = false;
                     end_tile_selection_drag(
@@ -992,8 +1125,9 @@ void Application::poll_events()
                 }
                 break;
 
-            case SDL_EVENT_WINDOW_RESIZED:
+            case SDL_EVENT_WINDOW_RESIZED: {
                 flush_pending_tile_selection_drag();
+                map_hover_update_pending = false;
                 window_.refresh_size();
                 std::cout << "[Midnight] Window resized: "
                           << window_.width()
@@ -1005,7 +1139,10 @@ void Application::poll_events()
                           << window_.pixel_height()
                           << " pixels"
                           << '\n';
+
+                queue_current_map_hover();
                 break;
+            }
 
             case SDL_EVENT_WINDOW_FOCUS_LOST:
                 if (tile_selection_dragging_) {
@@ -1013,6 +1150,19 @@ void Application::poll_events()
                     tile_selection_dragging_ = false;
                     print_tile_selection();
                 }
+
+                map_hover_update_pending = false;
+                clear_map_hover();
+                break;
+
+            case SDL_EVENT_WINDOW_MOUSE_ENTER:
+            case SDL_EVENT_WINDOW_FOCUS_GAINED:
+                queue_current_map_hover();
+                break;
+
+            case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+                map_hover_update_pending = false;
+                clear_map_hover();
                 break;
 
             default:
@@ -1021,6 +1171,115 @@ void Application::poll_events()
     }
 
     flush_pending_tile_selection_drag();
+    flush_pending_map_hover();
+}
+
+void Application::update_map_hover(
+    const float x,
+    const float y
+)
+{
+    std::uint32_t column = 0;
+    std::uint32_t row = 0;
+
+    if (!window_position_to_map_cell(
+            x,
+            y,
+            column,
+            row
+        )) {
+        clear_map_hover();
+        return;
+    }
+
+    if (map_hover_visible_ &&
+        column == hovered_map_column_ &&
+        row == hovered_map_row_) {
+        return;
+    }
+
+    vulkan_device_.wait_idle();
+
+    hovered_map_column_ = column;
+    hovered_map_row_ = row;
+    map_hover_visible_ = true;
+
+    upload_map_hover_vertices();
+}
+
+void Application::clear_map_hover()
+{
+    if (!map_hover_visible_) {
+        return;
+    }
+
+    vulkan_device_.wait_idle();
+
+    map_hover_visible_ = false;
+    upload_map_hover_vertices();
+}
+
+bool Application::window_position_to_map_cell(
+    const float x,
+    const float y,
+    std::uint32_t& column,
+    std::uint32_t& row
+) const
+{
+    if (window_.width() <= 0 || window_.height() <= 0) {
+        return false;
+    }
+
+    const float normalized_x =
+        (2.0f * x / static_cast<float>(window_.width())) - 1.0f;
+    const float normalized_y =
+        (2.0f * y / static_cast<float>(window_.height())) - 1.0f;
+
+    if (normalized_x < kMapCanvasLeft ||
+        normalized_x >= kMapCanvasRight ||
+        normalized_y < kMapCanvasTop ||
+        normalized_y >= kMapCanvasBottom) {
+        return false;
+    }
+
+    const float map_x =
+        (normalized_x - kMapCanvasLeft) /
+        (kMapCanvasRight - kMapCanvasLeft);
+    const float map_y =
+        (normalized_y - kMapCanvasTop) /
+        (kMapCanvasBottom - kMapCanvasTop);
+
+    column = std::min(
+        static_cast<std::uint32_t>(
+            map_x * static_cast<float>(kMapCanvasColumns)
+        ),
+        kMapCanvasColumns - 1
+    );
+    row = std::min(
+        static_cast<std::uint32_t>(
+            map_y * static_cast<float>(kMapCanvasRows)
+        ),
+        kMapCanvasRows - 1
+    );
+
+    return true;
+}
+
+void Application::upload_map_hover_vertices()
+{
+    const MapHoverVertices vertices =
+        map_hover_visible_
+            ? make_map_hover_vertices(
+                  hovered_map_column_,
+                  hovered_map_row_
+              )
+            : kHiddenMapHoverVertices;
+
+    quad_vertex_buffer_.upload(
+        vertices.data(),
+        sizeof(vertices),
+        kMapHoverVertexByteOffset
+    );
 }
 
 void Application::toggle_tileset_grid()
