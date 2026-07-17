@@ -268,6 +268,8 @@ constexpr TilesetGridVertices make_tileset_grid_vertices()
 constexpr TilesetGridVertices kTilesetGridVertices =
     make_tileset_grid_vertices();
 
+constexpr TilesetGridVertices kHiddenTilesetGridVertices{};
+
 constexpr std::size_t kTileSelectionVertexCount = 12;
 
 constexpr std::array<Vertex2D, kTileSelectionVertexCount>
@@ -340,7 +342,10 @@ constexpr std::size_t kQuadVertexCount =
     kTilesetGridVertices.size() +
     kTileSelectionVertexCount;
 
-constexpr std::size_t kStaticVertexByteSize =
+constexpr std::size_t kTilesetGridVertexByteOffset =
+    sizeof(kTilesetPreviewVertices);
+
+constexpr std::size_t kTileSelectionVertexByteOffset =
     sizeof(kTilesetPreviewVertices) +
     sizeof(kTilesetGridVertices);
 
@@ -519,11 +524,7 @@ Application::Application()
         sizeof(kTilesetPreviewVertices)
     );
 
-    quad_vertex_buffer_.upload(
-        kTilesetGridVertices.data(),
-        sizeof(kTilesetGridVertices),
-        sizeof(kTilesetPreviewVertices)
-    );
+    upload_tileset_grid_vertices();
 
     upload_tile_selection_vertices();
 
@@ -634,6 +635,7 @@ void Application::print_startup_info() const
               << kSelectedTilePreviewScale
               << "x\n";
     std::cout << "[Midnight] Use the arrow keys or click the atlas to select a tile\n";
+    std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
 
@@ -669,6 +671,12 @@ void Application::poll_events()
                         move_tile_selection(0, 1);
                         break;
 
+                    case SDLK_G:
+                        if (!event.key.repeat) {
+                            toggle_tileset_grid();
+                        }
+                        break;
+
                     default:
                         break;
                 }
@@ -701,6 +709,32 @@ void Application::poll_events()
                 break;
         }
     }
+}
+
+void Application::toggle_tileset_grid()
+{
+    vulkan_device_.wait_idle();
+
+    tileset_grid_visible_ = !tileset_grid_visible_;
+    upload_tileset_grid_vertices();
+
+    std::cout << "[Midnight] Atlas grid "
+              << (tileset_grid_visible_ ? "shown" : "hidden")
+              << '\n';
+}
+
+void Application::upload_tileset_grid_vertices()
+{
+    const TilesetGridVertices& vertices =
+        tileset_grid_visible_
+            ? kTilesetGridVertices
+            : kHiddenTilesetGridVertices;
+
+    quad_vertex_buffer_.upload(
+        vertices.data(),
+        sizeof(vertices),
+        kTilesetGridVertexByteOffset
+    );
 }
 
 void Application::move_tile_selection(
@@ -813,7 +847,7 @@ void Application::upload_tile_selection_vertices()
     quad_vertex_buffer_.upload(
         vertices.data(),
         sizeof(vertices),
-        kStaticVertexByteSize
+        kTileSelectionVertexByteOffset
     );
 }
 

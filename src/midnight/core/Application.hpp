@@ -34,6 +34,8 @@ public:
 private:
     void print_startup_info() const;
     void poll_events();
+    void toggle_tileset_grid();
+    void upload_tileset_grid_vertices();
     void move_tile_selection(int column_delta, int row_delta);
     void select_tile(std::uint32_t column, std::uint32_t row);
     void select_tile_at_window_position(float x, float y);
@@ -57,6 +59,7 @@ private:
 
     std::uint32_t selected_tile_column_ = 0;
     std::uint32_t selected_tile_row_ = 0;
+    bool tileset_grid_visible_ = true;
     bool running_ = true;
 };
 
