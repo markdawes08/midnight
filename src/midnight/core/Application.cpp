@@ -1088,7 +1088,7 @@ void Application::print_startup_info() const
     print_tile_selection();
     std::cout << "[Midnight] Use the arrow keys, click, or drag across the atlas to select tiles\n";
     std::cout << "[Midnight] Move the cursor across the map to highlight cells\n";
-    std::cout << "[Midnight] Left-click or drag across the map to paint the selection's top-left tile\n";
+    std::cout << "[Midnight] Left-click or drag across the map to paint the selected region\n";
     std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
@@ -1193,7 +1193,7 @@ void Application::poll_events()
                     !map_erase_dragging_) {
                     flush_pending_tile_selection_drag();
                     map_paint_dragging_ = false;
-                    map_paint_dragging_ = paint_map_tile(
+                    map_paint_dragging_ = paint_map_selection(
                         event.button.x,
                         event.button.y
                     );
@@ -1218,7 +1218,7 @@ void Application::poll_events()
             case SDL_EVENT_MOUSE_MOTION:
                 if (map_paint_dragging_) {
                     if ((event.motion.state & SDL_BUTTON_LMASK) != 0) {
-                        (void)paint_map_tile(
+                        (void)paint_map_selection(
                             event.motion.x,
                             event.motion.y
                         );
@@ -1264,7 +1264,7 @@ void Application::poll_events()
 
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     if (map_paint_dragging_) {
-                        (void)paint_map_tile(
+                        (void)paint_map_selection(
                             event.button.x,
                             event.button.y
                         );
@@ -1339,7 +1339,7 @@ void Application::poll_events()
     flush_pending_map_hover();
 }
 
-bool Application::paint_map_tile(
+bool Application::paint_map_selection(
     const float x,
     const float y
 )
@@ -1365,34 +1365,120 @@ bool Application::paint_map_tile(
     last_map_paint_column_ = column;
     last_map_paint_row_ = row;
 
-    const std::size_t cell_index =
-        static_cast<std::size_t>(row) * kMapCanvasColumns +
-        column;
-    MapTile& map_tile = map_tiles_.at(cell_index);
+    const std::uint32_t selected_column_count =
+        selected_tile_right_ - selected_tile_left_ + 1;
+    const std::uint32_t selected_row_count =
+        selected_tile_bottom_ - selected_tile_top_ + 1;
+    const std::uint32_t painted_column_count = std::min(
+        selected_column_count,
+        kMapCanvasColumns - column
+    );
+    const std::uint32_t painted_row_count = std::min(
+        selected_row_count,
+        kMapCanvasRows - row
+    );
 
-    if (map_tile.occupied &&
-        map_tile.tileset_column == selected_tile_left_ &&
-        map_tile.tileset_row == selected_tile_top_) {
+    const auto tile_matches = [](
+        const MapTile& map_tile,
+        const std::uint32_t tileset_column,
+        const std::uint32_t tileset_row
+    ) {
+        return map_tile.occupied &&
+            map_tile.tileset_column == tileset_column &&
+            map_tile.tileset_row == tileset_row;
+    };
+
+    bool tile_will_change = false;
+
+    for (std::uint32_t row_offset = 0;
+         row_offset < painted_row_count && !tile_will_change;
+         ++row_offset) {
+        for (std::uint32_t column_offset = 0;
+             column_offset < painted_column_count;
+             ++column_offset) {
+            const std::uint32_t map_column =
+                column + column_offset;
+            const std::uint32_t map_row =
+                row + row_offset;
+            const std::size_t cell_index =
+                static_cast<std::size_t>(map_row) *
+                    kMapCanvasColumns +
+                map_column;
+            const MapTile& map_tile =
+                map_tiles_.at(cell_index);
+
+            if (!tile_matches(
+                    map_tile,
+                    selected_tile_left_ + column_offset,
+                    selected_tile_top_ + row_offset
+                )) {
+                tile_will_change = true;
+                break;
+            }
+        }
+    }
+
+    if (!tile_will_change) {
         return true;
     }
 
     vulkan_device_.wait_idle();
 
-    map_tile.tileset_column = selected_tile_left_;
-    map_tile.tileset_row = selected_tile_top_;
-    map_tile.occupied = true;
+    for (std::uint32_t row_offset = 0;
+         row_offset < painted_row_count;
+         ++row_offset) {
+        for (std::uint32_t column_offset = 0;
+             column_offset < painted_column_count;
+             ++column_offset) {
+            const std::uint32_t map_column =
+                column + column_offset;
+            const std::uint32_t map_row =
+                row + row_offset;
+            const std::uint32_t tileset_column =
+                selected_tile_left_ + column_offset;
+            const std::uint32_t tileset_row =
+                selected_tile_top_ + row_offset;
+            const std::size_t cell_index =
+                static_cast<std::size_t>(map_row) *
+                    kMapCanvasColumns +
+                map_column;
+            MapTile& map_tile = map_tiles_.at(cell_index);
 
-    upload_map_tile_vertices(column, row);
+            if (tile_matches(
+                    map_tile,
+                    tileset_column,
+                    tileset_row
+                )) {
+                continue;
+            }
 
-    std::cout << "[Midnight] Painted atlas tile ("
-              << map_tile.tileset_column
-              << ", "
-              << map_tile.tileset_row
-              << ") at map cell ("
+            map_tile.tileset_column = tileset_column;
+            map_tile.tileset_row = tileset_row;
+            map_tile.occupied = true;
+
+            upload_map_tile_vertices(map_column, map_row);
+        }
+    }
+
+    std::cout << "[Midnight] Painted "
+              << selected_column_count
+              << "x"
+              << selected_row_count
+              << " atlas region at map cell ("
               << column
               << ", "
               << row
-              << ")\n";
+              << ")";
+
+    if (painted_column_count != selected_column_count ||
+        painted_row_count != selected_row_count) {
+        std::cout << ", clipped to "
+                  << painted_column_count
+                  << "x"
+                  << painted_row_count;
+    }
+
+    std::cout << '\n';
 
     return true;
 }
