@@ -23,6 +23,37 @@ else()
 endif()
 
 set(MIDNIGHT_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set(MIDNIGHT_ASSET_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/assets")
+
+set(MIDNIGHT_ASSET_FILES
+    assets/README.md
+    assets/tilesets/basic_village/SOURCE.md
+    assets/tilesets/basic_village/furniture.png
+    assets/tilesets/basic_village/house_tileset.png
+    assets/tilesets/basic_village/outdoor_tileset.png
+    assets/tilesets/basic_village/trees_and_bushes.png
+)
+
+set(MIDNIGHT_ASSET_OUTPUTS)
+
+foreach(ASSET_FILE IN LISTS MIDNIGHT_ASSET_FILES)
+    set(ASSET_SOURCE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${ASSET_FILE}")
+    set(ASSET_OUTPUT_PATH "${CMAKE_CURRENT_BINARY_DIR}/${ASSET_FILE}")
+    get_filename_component(ASSET_OUTPUT_DIRECTORY "${ASSET_OUTPUT_PATH}" DIRECTORY)
+
+    add_custom_command(
+        OUTPUT "${ASSET_OUTPUT_PATH}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${ASSET_OUTPUT_DIRECTORY}"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "${ASSET_SOURCE_PATH}"
+            "${ASSET_OUTPUT_PATH}"
+        DEPENDS "${ASSET_SOURCE_PATH}"
+        COMMENT "Copying asset ${ASSET_FILE}"
+        VERBATIM
+    )
+
+    list(APPEND MIDNIGHT_ASSET_OUTPUTS "${ASSET_OUTPUT_PATH}")
+endforeach()
 
 function(midnight_compile_shader OUTPUT_VARIABLE SOURCE_FILE)
     get_filename_component(SHADER_FILE_NAME "${SOURCE_FILE}" NAME)
@@ -51,6 +82,10 @@ add_custom_target(midnight_shaders
         "${MIDNIGHT_TRIANGLE_FRAG_SPV}"
 )
 
+add_custom_target(midnight_assets
+    DEPENDS ${MIDNIGHT_ASSET_OUTPUTS}
+)
+
 add_executable(midnight
     src/main.cpp
     src/midnight/core/Application.cpp
@@ -72,7 +107,7 @@ add_executable(midnight
     src/midnight/renderer/vulkan/VulkanUtils.cpp
 )
 
-add_dependencies(midnight midnight_shaders)
+add_dependencies(midnight midnight_assets midnight_shaders)
 
 target_include_directories(midnight
     PRIVATE
@@ -87,6 +122,7 @@ target_link_libraries(midnight
 
 target_compile_definitions(midnight
     PRIVATE
+        "MIDNIGHT_ASSET_DIR=\"${MIDNIGHT_ASSET_OUTPUT_DIR}\""
         "MIDNIGHT_SHADER_DIR=\"${MIDNIGHT_SHADER_OUTPUT_DIR}\""
 )
 
