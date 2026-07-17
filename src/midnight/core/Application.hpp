@@ -37,8 +37,23 @@ private:
     void toggle_tileset_grid();
     void upload_tileset_grid_vertices();
     void move_tile_selection(int column_delta, int row_delta);
-    void select_tile(std::uint32_t column, std::uint32_t row);
-    void select_tile_at_window_position(float x, float y);
+    void begin_tile_selection_drag(float x, float y);
+    void update_tile_selection_drag(float x, float y);
+    void end_tile_selection_drag(float x, float y);
+    [[nodiscard]] bool window_position_to_tile(
+        float x,
+        float y,
+        bool clamp_to_atlas,
+        std::uint32_t& column,
+        std::uint32_t& row
+    ) const;
+    bool set_tile_selection(
+        std::uint32_t first_column,
+        std::uint32_t first_row,
+        std::uint32_t second_column,
+        std::uint32_t second_row
+    );
+    void print_tile_selection() const;
     void upload_tile_selection_vertices();
 
     SdlContext sdl_;
@@ -57,9 +72,14 @@ private:
     VulkanTextureDescriptor texture_descriptor_;
     VulkanFrameRenderer vulkan_frame_renderer_;
 
-    std::uint32_t selected_tile_column_ = 0;
-    std::uint32_t selected_tile_row_ = 0;
+    std::uint32_t selected_tile_left_ = 0;
+    std::uint32_t selected_tile_top_ = 0;
+    std::uint32_t selected_tile_right_ = 0;
+    std::uint32_t selected_tile_bottom_ = 0;
+    std::uint32_t tile_selection_drag_anchor_column_ = 0;
+    std::uint32_t tile_selection_drag_anchor_row_ = 0;
     bool tileset_grid_visible_ = true;
+    bool tile_selection_dragging_ = false;
     bool running_ = true;
 };
 

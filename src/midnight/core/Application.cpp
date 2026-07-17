@@ -29,7 +29,9 @@ constexpr std::uint32_t kOutdoorTilesetRows =
 constexpr std::uint32_t kTilesetPreviewScale = 3;
 constexpr std::uint32_t kInitialSelectedTileColumn = 1;
 constexpr std::uint32_t kInitialSelectedTileRow = 0;
-constexpr std::uint32_t kSelectedTilePreviewScale = 4;
+constexpr std::uint32_t kSelectedRegionPreviewMaxScale = 4;
+constexpr std::uint32_t kSelectedRegionPreviewMaxWidth = 256;
+constexpr std::uint32_t kSelectedRegionPreviewMaxHeight = 512;
 constexpr std::size_t kOutdoorTilesetByteSize =
     static_cast<std::size_t>(kOutdoorTilesetWidth) *
     static_cast<std::size_t>(kOutdoorTilesetHeight) *
@@ -39,6 +41,8 @@ static_assert(kOutdoorTilesetWidth % kTilesetTileWidth == 0);
 static_assert(kOutdoorTilesetHeight % kTilesetTileHeight == 0);
 static_assert(kInitialSelectedTileColumn < kOutdoorTilesetColumns);
 static_assert(kInitialSelectedTileRow < kOutdoorTilesetRows);
+static_assert(kSelectedRegionPreviewMaxWidth >= kOutdoorTilesetWidth);
+static_assert(kSelectedRegionPreviewMaxHeight >= kOutdoorTilesetHeight);
 
 struct TextureRegion final {
     float left = 0.0f;
@@ -48,20 +52,22 @@ struct TextureRegion final {
 };
 
 constexpr TextureRegion tile_texture_region(
-    const std::uint32_t column,
-    const std::uint32_t row
+    const std::uint32_t left,
+    const std::uint32_t top,
+    const std::uint32_t right,
+    const std::uint32_t bottom
 )
 {
     return TextureRegion{
-        .left = static_cast<float>(column * kTilesetTileWidth) /
+        .left = static_cast<float>(left * kTilesetTileWidth) /
             static_cast<float>(kOutdoorTilesetWidth),
-        .top = static_cast<float>(row * kTilesetTileHeight) /
+        .top = static_cast<float>(top * kTilesetTileHeight) /
             static_cast<float>(kOutdoorTilesetHeight),
         .right =
-            static_cast<float>((column + 1) * kTilesetTileWidth) /
+            static_cast<float>((right + 1) * kTilesetTileWidth) /
             static_cast<float>(kOutdoorTilesetWidth),
         .bottom =
-            static_cast<float>((row + 1) * kTilesetTileHeight) /
+            static_cast<float>((bottom + 1) * kTilesetTileHeight) /
             static_cast<float>(kOutdoorTilesetHeight)
     };
 }
@@ -74,14 +80,7 @@ constexpr float kTilesetPreviewHalfHeight =
     static_cast<float>(kOutdoorTilesetHeight * kTilesetPreviewScale) /
     static_cast<float>(kInitialWindowHeight);
 
-constexpr float kSelectedTilePreviewCenterX = 0.65f;
-constexpr float kSelectedTilePreviewHalfWidth =
-    static_cast<float>(kTilesetTileWidth * kSelectedTilePreviewScale) /
-    static_cast<float>(kInitialWindowWidth);
-
-constexpr float kSelectedTilePreviewHalfHeight =
-    static_cast<float>(kTilesetTileHeight * kSelectedTilePreviewScale) /
-    static_cast<float>(kInitialWindowHeight);
+constexpr float kSelectedRegionPreviewCenterX = 0.65f;
 
 constexpr std::uint32_t kSelectionOutlineThickness = 2;
 constexpr float kSelectionOutlineRed = 1.0f;
@@ -272,25 +271,88 @@ constexpr TilesetGridVertices kHiddenTilesetGridVertices{};
 
 constexpr std::size_t kTileSelectionVertexCount = 12;
 
+constexpr std::uint32_t selected_region_preview_scale(
+    const std::uint32_t column_count,
+    const std::uint32_t row_count
+)
+{
+    const std::uint32_t pixel_width =
+        column_count * kTilesetTileWidth;
+    const std::uint32_t pixel_height =
+        row_count * kTilesetTileHeight;
+
+    return std::min(
+        kSelectedRegionPreviewMaxScale,
+        std::min(
+            kSelectedRegionPreviewMaxWidth / pixel_width,
+            kSelectedRegionPreviewMaxHeight / pixel_height
+        )
+    );
+}
+
+static_assert(selected_region_preview_scale(1, 1) == 4);
+static_assert(selected_region_preview_scale(3, 2) == 4);
+static_assert(
+    selected_region_preview_scale(
+        kOutdoorTilesetColumns,
+        kOutdoorTilesetRows
+    ) == 1
+);
+
 constexpr std::array<Vertex2D, kTileSelectionVertexCount>
 make_tile_selection_vertices(
-    const std::uint32_t selected_column,
-    const std::uint32_t selected_row
+    const std::uint32_t selected_left,
+    const std::uint32_t selected_top,
+    const std::uint32_t selected_right,
+    const std::uint32_t selected_bottom
 )
 {
     const TextureRegion selected_region =
-        tile_texture_region(selected_column, selected_row);
+        tile_texture_region(
+            selected_left,
+            selected_top,
+            selected_right,
+            selected_bottom
+        );
+
+    const std::uint32_t selected_column_count =
+        selected_right - selected_left + 1;
+    const std::uint32_t selected_row_count =
+        selected_bottom - selected_top + 1;
+    const std::uint32_t preview_scale =
+        selected_region_preview_scale(
+            selected_column_count,
+            selected_row_count
+        );
+    const float preview_half_width =
+        static_cast<float>(
+            selected_column_count *
+            kTilesetTileWidth *
+            preview_scale
+        ) /
+        static_cast<float>(kInitialWindowWidth);
+    const float preview_half_height =
+        static_cast<float>(
+            selected_row_count *
+            kTilesetTileHeight *
+            preview_scale
+        ) /
+        static_cast<float>(kInitialWindowHeight);
 
     const float tile_left =
         -kTilesetPreviewHalfWidth +
-        static_cast<float>(selected_column) * kAtlasTileWidth;
+        static_cast<float>(selected_left) * kAtlasTileWidth;
 
     const float tile_top =
         -kTilesetPreviewHalfHeight +
-        static_cast<float>(selected_row) * kAtlasTileHeight;
+        static_cast<float>(selected_top) * kAtlasTileHeight;
 
-    const float tile_right = tile_left + kAtlasTileWidth;
-    const float tile_bottom = tile_top + kAtlasTileHeight;
+    const float tile_right =
+        -kTilesetPreviewHalfWidth +
+        static_cast<float>(selected_right + 1) * kAtlasTileWidth;
+    const float tile_bottom =
+        -kTilesetPreviewHalfHeight +
+        static_cast<float>(selected_bottom + 1) * kAtlasTileHeight;
 
     const float inner_left = tile_left + kSelectionOutlineWidth;
     const float inner_top = tile_top + kSelectionOutlineHeight;
@@ -299,29 +361,29 @@ make_tile_selection_vertices(
 
     return {{
         Vertex2D{
-            kSelectedTilePreviewCenterX - kSelectedTilePreviewHalfWidth,
-            -kSelectedTilePreviewHalfHeight,
+            kSelectedRegionPreviewCenterX - preview_half_width,
+            -preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.left,
             selected_region.top
         },
         Vertex2D{
-            kSelectedTilePreviewCenterX + kSelectedTilePreviewHalfWidth,
-            -kSelectedTilePreviewHalfHeight,
+            kSelectedRegionPreviewCenterX + preview_half_width,
+            -preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.right,
             selected_region.top
         },
         Vertex2D{
-            kSelectedTilePreviewCenterX + kSelectedTilePreviewHalfWidth,
-            kSelectedTilePreviewHalfHeight,
+            kSelectedRegionPreviewCenterX + preview_half_width,
+            preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.right,
             selected_region.bottom
         },
         Vertex2D{
-            kSelectedTilePreviewCenterX - kSelectedTilePreviewHalfWidth,
-            kSelectedTilePreviewHalfHeight,
+            kSelectedRegionPreviewCenterX - preview_half_width,
+            preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.left,
             selected_region.bottom
@@ -516,8 +578,10 @@ Application::Application()
           static_cast<std::uint32_t>(kQuadIndices.size()),
           VK_INDEX_TYPE_UINT16
       ),
-      selected_tile_column_(kInitialSelectedTileColumn),
-      selected_tile_row_(kInitialSelectedTileRow)
+      selected_tile_left_(kInitialSelectedTileColumn),
+      selected_tile_top_(kInitialSelectedTileRow),
+      selected_tile_right_(kInitialSelectedTileColumn),
+      selected_tile_bottom_(kInitialSelectedTileRow)
 {
     quad_vertex_buffer_.upload(
         kTilesetPreviewVertices.data(),
@@ -627,14 +691,9 @@ void Application::print_startup_info() const
               << " pixels\n";
     std::cout << "[Midnight] Rendering the outdoor tileset at "
               << kTilesetPreviewScale
-              << "x and tile ("
-              << selected_tile_column_
-              << ", "
-              << selected_tile_row_
-              << ") at "
-              << kSelectedTilePreviewScale
               << "x\n";
-    std::cout << "[Midnight] Use the arrow keys or click the atlas to select a tile\n";
+    print_tile_selection();
+    std::cout << "[Midnight] Use the arrow keys, click, or drag across the atlas to select tiles\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
@@ -642,6 +701,22 @@ void Application::print_startup_info() const
 void Application::poll_events()
 {
     SDL_Event event{};
+    bool tile_selection_drag_update_pending = false;
+    float pending_tile_selection_drag_x = 0.0f;
+    float pending_tile_selection_drag_y = 0.0f;
+
+    const auto flush_pending_tile_selection_drag = [&]() {
+        if (!tile_selection_dragging_ ||
+            !tile_selection_drag_update_pending) {
+            return;
+        }
+
+        tile_selection_drag_update_pending = false;
+        update_tile_selection_drag(
+            pending_tile_selection_drag_x,
+            pending_tile_selection_drag_y
+        );
+    };
 
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
@@ -650,6 +725,8 @@ void Application::poll_events()
                 break;
 
             case SDL_EVENT_KEY_DOWN:
+                flush_pending_tile_selection_drag();
+
                 switch (event.key.key) {
                     case SDLK_ESCAPE:
                         running_ = false;
@@ -684,7 +761,34 @@ void Application::poll_events()
 
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 if (event.button.button == SDL_BUTTON_LEFT) {
-                    select_tile_at_window_position(
+                    flush_pending_tile_selection_drag();
+                    begin_tile_selection_drag(
+                        event.button.x,
+                        event.button.y
+                    );
+                }
+                break;
+
+            case SDL_EVENT_MOUSE_MOTION:
+                if (tile_selection_dragging_) {
+                    if ((event.motion.state & SDL_BUTTON_LMASK) != 0) {
+                        pending_tile_selection_drag_x = event.motion.x;
+                        pending_tile_selection_drag_y = event.motion.y;
+                        tile_selection_drag_update_pending = true;
+                    } else {
+                        tile_selection_drag_update_pending = false;
+                        end_tile_selection_drag(
+                            event.motion.x,
+                            event.motion.y
+                        );
+                    }
+                }
+                break;
+
+            case SDL_EVENT_MOUSE_BUTTON_UP:
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    tile_selection_drag_update_pending = false;
+                    end_tile_selection_drag(
                         event.button.x,
                         event.button.y
                     );
@@ -692,6 +796,7 @@ void Application::poll_events()
                 break;
 
             case SDL_EVENT_WINDOW_RESIZED:
+                flush_pending_tile_selection_drag();
                 window_.refresh_size();
                 std::cout << "[Midnight] Window resized: "
                           << window_.width()
@@ -705,10 +810,20 @@ void Application::poll_events()
                           << '\n';
                 break;
 
+            case SDL_EVENT_WINDOW_FOCUS_LOST:
+                if (tile_selection_dragging_) {
+                    flush_pending_tile_selection_drag();
+                    tile_selection_dragging_ = false;
+                    print_tile_selection();
+                }
+                break;
+
             default:
                 break;
         }
     }
+
+    flush_pending_tile_selection_drag();
 }
 
 void Application::toggle_tileset_grid()
@@ -743,59 +858,106 @@ void Application::move_tile_selection(
 )
 {
     const int next_column = std::clamp(
-        static_cast<int>(selected_tile_column_) + column_delta,
+        static_cast<int>(selected_tile_left_) + column_delta,
         0,
         static_cast<int>(kOutdoorTilesetColumns) - 1
     );
 
     const int next_row = std::clamp(
-        static_cast<int>(selected_tile_row_) + row_delta,
+        static_cast<int>(selected_tile_top_) + row_delta,
         0,
         static_cast<int>(kOutdoorTilesetRows) - 1
     );
 
-    select_tile(
-        static_cast<std::uint32_t>(next_column),
-        static_cast<std::uint32_t>(next_row)
-    );
+    if (set_tile_selection(
+            static_cast<std::uint32_t>(next_column),
+            static_cast<std::uint32_t>(next_row),
+            static_cast<std::uint32_t>(next_column),
+            static_cast<std::uint32_t>(next_row)
+        )) {
+        print_tile_selection();
+    }
 }
 
-void Application::select_tile(
-    const std::uint32_t column,
-    const std::uint32_t row
-)
-{
-    if (column >= kOutdoorTilesetColumns ||
-        row >= kOutdoorTilesetRows) {
-        return;
-    }
-
-    if (column == selected_tile_column_ &&
-        row == selected_tile_row_) {
-        return;
-    }
-
-    vulkan_device_.wait_idle();
-
-    selected_tile_column_ = column;
-    selected_tile_row_ = row;
-
-    upload_tile_selection_vertices();
-
-    std::cout << "[Midnight] Selected tile: ("
-              << selected_tile_column_
-              << ", "
-              << selected_tile_row_
-              << ")\n";
-}
-
-void Application::select_tile_at_window_position(
+void Application::begin_tile_selection_drag(
     const float x,
     const float y
 )
 {
-    if (window_.width() <= 0 || window_.height() <= 0) {
+    std::uint32_t column = 0;
+    std::uint32_t row = 0;
+
+    if (!window_position_to_tile(
+            x,
+            y,
+            false,
+            column,
+            row
+        )) {
         return;
+    }
+
+    tile_selection_drag_anchor_column_ = column;
+    tile_selection_drag_anchor_row_ = row;
+    tile_selection_dragging_ = true;
+
+    (void)set_tile_selection(column, row, column, row);
+}
+
+void Application::update_tile_selection_drag(
+    const float x,
+    const float y
+)
+{
+    if (!tile_selection_dragging_) {
+        return;
+    }
+
+    std::uint32_t column = 0;
+    std::uint32_t row = 0;
+
+    if (!window_position_to_tile(
+            x,
+            y,
+            true,
+            column,
+            row
+        )) {
+        return;
+    }
+
+    (void)set_tile_selection(
+        tile_selection_drag_anchor_column_,
+        tile_selection_drag_anchor_row_,
+        column,
+        row
+    );
+}
+
+void Application::end_tile_selection_drag(
+    const float x,
+    const float y
+)
+{
+    if (!tile_selection_dragging_) {
+        return;
+    }
+
+    update_tile_selection_drag(x, y);
+    tile_selection_dragging_ = false;
+    print_tile_selection();
+}
+
+bool Application::window_position_to_tile(
+    const float x,
+    const float y,
+    const bool clamp_to_atlas,
+    std::uint32_t& column,
+    std::uint32_t& row
+) const
+{
+    if (window_.width() <= 0 || window_.height() <= 0) {
+        return false;
     }
 
     const float normalized_x =
@@ -804,44 +966,123 @@ void Application::select_tile_at_window_position(
     const float normalized_y =
         (2.0f * y / static_cast<float>(window_.height())) - 1.0f;
 
-    if (normalized_x < -kTilesetPreviewHalfWidth ||
-        normalized_x >= kTilesetPreviewHalfWidth ||
-        normalized_y < -kTilesetPreviewHalfHeight ||
-        normalized_y >= kTilesetPreviewHalfHeight) {
-        return;
+    const bool position_is_in_atlas =
+        normalized_x >= -kTilesetPreviewHalfWidth &&
+        normalized_x < kTilesetPreviewHalfWidth &&
+        normalized_y >= -kTilesetPreviewHalfHeight &&
+        normalized_y < kTilesetPreviewHalfHeight;
+
+    if (!clamp_to_atlas && !position_is_in_atlas) {
+        return false;
     }
 
-    const float atlas_x =
+    const float atlas_x = std::clamp(
         (normalized_x + kTilesetPreviewHalfWidth) /
-        (2.0f * kTilesetPreviewHalfWidth);
+            (2.0f * kTilesetPreviewHalfWidth),
+        0.0f,
+        1.0f
+    );
 
-    const float atlas_y =
+    const float atlas_y = std::clamp(
         (normalized_y + kTilesetPreviewHalfHeight) /
-        (2.0f * kTilesetPreviewHalfHeight);
+            (2.0f * kTilesetPreviewHalfHeight),
+        0.0f,
+        1.0f
+    );
 
-    const std::uint32_t column = std::min(
+    column = std::min(
         static_cast<std::uint32_t>(
             atlas_x * static_cast<float>(kOutdoorTilesetColumns)
         ),
         kOutdoorTilesetColumns - 1
     );
 
-    const std::uint32_t row = std::min(
+    row = std::min(
         static_cast<std::uint32_t>(
             atlas_y * static_cast<float>(kOutdoorTilesetRows)
         ),
         kOutdoorTilesetRows - 1
     );
 
-    select_tile(column, row);
+    return true;
+}
+
+bool Application::set_tile_selection(
+    const std::uint32_t first_column,
+    const std::uint32_t first_row,
+    const std::uint32_t second_column,
+    const std::uint32_t second_row
+)
+{
+    if (first_column >= kOutdoorTilesetColumns ||
+        second_column >= kOutdoorTilesetColumns ||
+        first_row >= kOutdoorTilesetRows ||
+        second_row >= kOutdoorTilesetRows) {
+        return false;
+    }
+
+    const std::uint32_t left =
+        std::min(first_column, second_column);
+    const std::uint32_t top =
+        std::min(first_row, second_row);
+    const std::uint32_t right =
+        std::max(first_column, second_column);
+    const std::uint32_t bottom =
+        std::max(first_row, second_row);
+
+    if (left == selected_tile_left_ &&
+        top == selected_tile_top_ &&
+        right == selected_tile_right_ &&
+        bottom == selected_tile_bottom_) {
+        return false;
+    }
+
+    vulkan_device_.wait_idle();
+
+    selected_tile_left_ = left;
+    selected_tile_top_ = top;
+    selected_tile_right_ = right;
+    selected_tile_bottom_ = bottom;
+
+    upload_tile_selection_vertices();
+    return true;
+}
+
+void Application::print_tile_selection() const
+{
+    const std::uint32_t selected_column_count =
+        selected_tile_right_ - selected_tile_left_ + 1;
+    const std::uint32_t selected_row_count =
+        selected_tile_bottom_ - selected_tile_top_ + 1;
+
+    std::cout << "[Midnight] Selected region: ("
+              << selected_tile_left_
+              << ", "
+              << selected_tile_top_
+              << ") to ("
+              << selected_tile_right_
+              << ", "
+              << selected_tile_bottom_
+              << "), "
+              << selected_column_count
+              << "x"
+              << selected_row_count
+              << " tiles, preview "
+              << selected_region_preview_scale(
+                     selected_column_count,
+                     selected_row_count
+                 )
+              << "x\n";
 }
 
 void Application::upload_tile_selection_vertices()
 {
     const std::array<Vertex2D, kTileSelectionVertexCount> vertices =
         make_tile_selection_vertices(
-            selected_tile_column_,
-            selected_tile_row_
+            selected_tile_left_,
+            selected_tile_top_,
+            selected_tile_right_,
+            selected_tile_bottom_
         );
 
     quad_vertex_buffer_.upload(
