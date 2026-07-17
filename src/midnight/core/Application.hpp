@@ -42,6 +42,7 @@ private:
     void print_startup_info() const;
     void poll_events();
     [[nodiscard]] bool paint_map_tile(float x, float y);
+    void erase_map_tile(float x, float y);
     void upload_map_tile_vertices(
         std::uint32_t column,
         std::uint32_t row

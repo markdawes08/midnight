@@ -1089,6 +1089,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Use the arrow keys, click, or drag across the atlas to select tiles\n";
     std::cout << "[Midnight] Move the cursor across the map to highlight cells\n";
     std::cout << "[Midnight] Left-click or drag across the map to paint the selection's top-left tile\n";
+    std::cout << "[Midnight] Right-click the map to erase one tile\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
@@ -1202,6 +1203,11 @@ void Application::poll_events()
                             event.button.y
                         );
                     }
+                } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                    erase_map_tile(
+                        event.button.x,
+                        event.button.y
+                    );
                 }
                 break;
 
@@ -1364,6 +1370,44 @@ bool Application::paint_map_tile(
               << ")\n";
 
     return true;
+}
+
+void Application::erase_map_tile(
+    const float x,
+    const float y
+)
+{
+    std::uint32_t column = 0;
+    std::uint32_t row = 0;
+
+    if (!window_position_to_map_cell(
+            x,
+            y,
+            column,
+            row
+        )) {
+        return;
+    }
+
+    const std::size_t cell_index =
+        static_cast<std::size_t>(row) * kMapCanvasColumns +
+        column;
+    MapTile& map_tile = map_tiles_.at(cell_index);
+
+    if (!map_tile.occupied) {
+        return;
+    }
+
+    vulkan_device_.wait_idle();
+
+    map_tile = MapTile{};
+    upload_map_tile_vertices(column, row);
+
+    std::cout << "[Midnight] Erased map cell ("
+              << column
+              << ", "
+              << row
+              << ")\n";
 }
 
 void Application::upload_map_tile_vertices(
