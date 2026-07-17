@@ -1090,6 +1090,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Move the cursor across the map to highlight cells\n";
     std::cout << "[Midnight] Left-click or drag across the map to paint the selected region\n";
     std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
+    std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
@@ -1209,6 +1210,14 @@ void Application::poll_events()
                            !tile_selection_dragging_) {
                     map_erase_dragging_ = false;
                     map_erase_dragging_ = erase_map_tile(
+                        event.button.x,
+                        event.button.y
+                    );
+                } else if (event.button.button == SDL_BUTTON_MIDDLE &&
+                           !map_paint_dragging_ &&
+                           !map_erase_dragging_ &&
+                           !tile_selection_dragging_) {
+                    pick_map_tile(
                         event.button.x,
                         event.button.y
                     );
@@ -1530,6 +1539,50 @@ bool Application::erase_map_tile(
               << ")\n";
 
     return true;
+}
+
+void Application::pick_map_tile(
+    const float x,
+    const float y
+)
+{
+    std::uint32_t column = 0;
+    std::uint32_t row = 0;
+
+    if (!window_position_to_map_cell(
+            x,
+            y,
+            column,
+            row
+        )) {
+        return;
+    }
+
+    const std::size_t cell_index =
+        static_cast<std::size_t>(row) * kMapCanvasColumns +
+        column;
+    const MapTile& map_tile = map_tiles_.at(cell_index);
+
+    if (!map_tile.occupied) {
+        return;
+    }
+
+    (void)set_tile_selection(
+        map_tile.tileset_column,
+        map_tile.tileset_row,
+        map_tile.tileset_column,
+        map_tile.tileset_row
+    );
+
+    std::cout << "[Midnight] Picked atlas tile ("
+              << map_tile.tileset_column
+              << ", "
+              << map_tile.tileset_row
+              << ") from map cell ("
+              << column
+              << ", "
+              << row
+              << ")\n";
 }
 
 void Application::upload_map_tile_vertices(
