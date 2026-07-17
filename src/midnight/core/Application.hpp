@@ -68,6 +68,10 @@ private:
     void undo_map_edit();
     void redo_map_edit();
     void flood_fill_map();
+    [[nodiscard]] bool begin_map_rectangle_paint(float x, float y);
+    void update_map_rectangle_paint(float x, float y);
+    void apply_map_rectangle_paint();
+    void finish_map_rectangle_paint();
     [[nodiscard]] bool paint_map_selection(float x, float y);
     [[nodiscard]] bool erase_map_tile(float x, float y);
     void pick_map_tile(float x, float y);
@@ -81,7 +85,8 @@ private:
         float x,
         float y,
         std::uint32_t& column,
-        std::uint32_t& row
+        std::uint32_t& row,
+        bool clamp_to_map = false
     ) const;
     void upload_map_hover_vertices();
     void toggle_tileset_grid();
@@ -137,10 +142,19 @@ private:
     std::uint32_t last_map_paint_row_ = 0;
     std::uint32_t last_map_erase_column_ = 0;
     std::uint32_t last_map_erase_row_ = 0;
+    std::uint32_t map_rectangle_anchor_column_ = 0;
+    std::uint32_t map_rectangle_anchor_row_ = 0;
+    std::uint32_t map_rectangle_end_column_ = 0;
+    std::uint32_t map_rectangle_end_row_ = 0;
+    std::uint32_t map_rectangle_tileset_left_ = 0;
+    std::uint32_t map_rectangle_tileset_top_ = 0;
+    std::uint32_t map_rectangle_tileset_right_ = 0;
+    std::uint32_t map_rectangle_tileset_bottom_ = 0;
     bool tileset_grid_visible_ = true;
     bool map_grid_visible_ = true;
     bool tile_selection_dragging_ = false;
     bool map_paint_dragging_ = false;
+    bool map_rectangle_dragging_ = false;
     bool map_erase_dragging_ = false;
     bool map_edit_active_ = false;
     bool map_hover_visible_ = false;

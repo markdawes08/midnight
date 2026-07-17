@@ -1317,6 +1317,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Use the arrow keys, click, or drag across the atlas to select tiles\n";
     std::cout << "[Midnight] Move the cursor across the map to highlight cells\n";
     std::cout << "[Midnight] Left-click or drag across the map to paint the selected region\n";
+    std::cout << "[Midnight] Hold Shift and left-drag to paint a filled rectangle\n";
     std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
     std::cout << "[Midnight] Press F over the map to flood-fill with a 1x1 selection\n";
@@ -1382,6 +1383,7 @@ void Application::poll_events()
             print_tile_selection();
         }
 
+        finish_map_rectangle_paint();
         finish_map_edit();
         map_paint_dragging_ = false;
         map_erase_dragging_ = false;
@@ -1463,13 +1465,26 @@ void Application::poll_events()
                     !map_erase_dragging_) {
                     flush_pending_tile_selection_drag();
                     map_paint_dragging_ = false;
-                    begin_map_edit();
-                    map_paint_dragging_ = paint_map_selection(
-                        event.button.x,
-                        event.button.y
-                    );
+                    map_rectangle_dragging_ = false;
+                    const bool rectangle_requested =
+                        (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
 
-                    if (!map_paint_dragging_) {
+                    if (rectangle_requested) {
+                        map_rectangle_dragging_ =
+                            begin_map_rectangle_paint(
+                                event.button.x,
+                                event.button.y
+                            );
+                    } else {
+                        begin_map_edit();
+                        map_paint_dragging_ = paint_map_selection(
+                            event.button.x,
+                            event.button.y
+                        );
+                    }
+
+                    if (!map_paint_dragging_ &&
+                        !map_rectangle_dragging_) {
                         finish_map_edit();
                         begin_tile_selection_drag(
                             event.button.x,
@@ -1478,6 +1493,7 @@ void Application::poll_events()
                     }
                 } else if (event.button.button == SDL_BUTTON_RIGHT &&
                            !map_paint_dragging_ &&
+                           !map_rectangle_dragging_ &&
                            !tile_selection_dragging_) {
                     map_erase_dragging_ = false;
                     begin_map_edit();
@@ -1491,6 +1507,7 @@ void Application::poll_events()
                     }
                 } else if (event.button.button == SDL_BUTTON_MIDDLE &&
                            !map_paint_dragging_ &&
+                           !map_rectangle_dragging_ &&
                            !map_erase_dragging_ &&
                            !tile_selection_dragging_) {
                     pick_map_tile(
@@ -1510,6 +1527,21 @@ void Application::poll_events()
                     } else {
                         finish_map_edit();
                         map_paint_dragging_ = false;
+                    }
+                }
+
+                if (map_rectangle_dragging_) {
+                    if ((event.motion.state & SDL_BUTTON_LMASK) != 0) {
+                        update_map_rectangle_paint(
+                            event.motion.x,
+                            event.motion.y
+                        );
+                    } else {
+                        update_map_rectangle_paint(
+                            event.motion.x,
+                            event.motion.y
+                        );
+                        finish_map_rectangle_paint();
                     }
                 }
 
@@ -1550,7 +1582,13 @@ void Application::poll_events()
                 map_hover_update_pending = true;
 
                 if (event.button.button == SDL_BUTTON_LEFT) {
-                    if (map_paint_dragging_) {
+                    if (map_rectangle_dragging_) {
+                        update_map_rectangle_paint(
+                            event.button.x,
+                            event.button.y
+                        );
+                        finish_map_rectangle_paint();
+                    } else if (map_paint_dragging_) {
                         (void)paint_map_selection(
                             event.button.x,
                             event.button.y
@@ -1782,6 +1820,7 @@ void Application::flood_fill_map()
     if (!map_hover_visible_ ||
         tile_selection_dragging_ ||
         map_paint_dragging_ ||
+        map_rectangle_dragging_ ||
         map_erase_dragging_ ||
         map_edit_active_) {
         return;
@@ -1895,6 +1934,212 @@ void Application::flood_fill_map()
               << ", "
               << replacement.tileset_row
               << ")\n";
+}
+
+bool Application::begin_map_rectangle_paint(
+    const float x,
+    const float y
+)
+{
+    std::uint32_t column = 0;
+    std::uint32_t row = 0;
+
+    if (!window_position_to_map_cell(
+            x,
+            y,
+            column,
+            row
+        )) {
+        return false;
+    }
+
+    begin_map_edit();
+
+    map_rectangle_anchor_column_ = column;
+    map_rectangle_anchor_row_ = row;
+    map_rectangle_end_column_ = column;
+    map_rectangle_end_row_ = row;
+    map_rectangle_tileset_left_ = selected_tile_left_;
+    map_rectangle_tileset_top_ = selected_tile_top_;
+    map_rectangle_tileset_right_ = selected_tile_right_;
+    map_rectangle_tileset_bottom_ = selected_tile_bottom_;
+    map_rectangle_dragging_ = true;
+
+    apply_map_rectangle_paint();
+    return true;
+}
+
+void Application::update_map_rectangle_paint(
+    const float x,
+    const float y
+)
+{
+    if (!map_rectangle_dragging_) {
+        return;
+    }
+
+    std::uint32_t column = 0;
+    std::uint32_t row = 0;
+
+    if (!window_position_to_map_cell(
+            x,
+            y,
+            column,
+            row,
+            true
+        )) {
+        return;
+    }
+
+    if (column == map_rectangle_end_column_ &&
+        row == map_rectangle_end_row_) {
+        return;
+    }
+
+    map_rectangle_end_column_ = column;
+    map_rectangle_end_row_ = row;
+    apply_map_rectangle_paint();
+}
+
+void Application::apply_map_rectangle_paint()
+{
+    if (!map_rectangle_dragging_ ||
+        !map_edit_active_ ||
+        active_map_edit_before_.size() != map_tiles_.size()) {
+        return;
+    }
+
+    const std::uint32_t left = std::min(
+        map_rectangle_anchor_column_,
+        map_rectangle_end_column_
+    );
+    const std::uint32_t top = std::min(
+        map_rectangle_anchor_row_,
+        map_rectangle_end_row_
+    );
+    const std::uint32_t right = std::max(
+        map_rectangle_anchor_column_,
+        map_rectangle_end_column_
+    );
+    const std::uint32_t bottom = std::max(
+        map_rectangle_anchor_row_,
+        map_rectangle_end_row_
+    );
+    const std::uint32_t selected_column_count =
+        map_rectangle_tileset_right_ -
+        map_rectangle_tileset_left_ +
+        1;
+    const std::uint32_t selected_row_count =
+        map_rectangle_tileset_bottom_ -
+        map_rectangle_tileset_top_ +
+        1;
+
+    std::vector<MapTile> rectangle_tiles =
+        active_map_edit_before_;
+
+    for (std::uint32_t row = top; row <= bottom; ++row) {
+        for (std::uint32_t column = left;
+             column <= right;
+             ++column) {
+            const std::size_t cell_index =
+                static_cast<std::size_t>(row) *
+                    kMapCanvasColumns +
+                column;
+
+            rectangle_tiles.at(cell_index) = MapTile{
+                .tileset_column =
+                    map_rectangle_tileset_left_ +
+                    (column - left) % selected_column_count,
+                .tileset_row =
+                    map_rectangle_tileset_top_ +
+                    (row - top) % selected_row_count,
+                .occupied = true
+            };
+        }
+    }
+
+    if (rectangle_tiles == map_tiles_) {
+        return;
+    }
+
+    wait_for_rendering_resources();
+
+    for (std::size_t cell_index = 0;
+         cell_index < map_tiles_.size();
+         ++cell_index) {
+        if (rectangle_tiles.at(cell_index) ==
+            map_tiles_.at(cell_index)) {
+            continue;
+        }
+
+        map_tiles_.at(cell_index) =
+            rectangle_tiles.at(cell_index);
+
+        upload_map_tile_vertices(
+            static_cast<std::uint32_t>(
+                cell_index % kMapCanvasColumns
+            ),
+            static_cast<std::uint32_t>(
+                cell_index / kMapCanvasColumns
+            )
+        );
+    }
+}
+
+void Application::finish_map_rectangle_paint()
+{
+    if (!map_rectangle_dragging_) {
+        return;
+    }
+
+    const std::uint32_t left = std::min(
+        map_rectangle_anchor_column_,
+        map_rectangle_end_column_
+    );
+    const std::uint32_t top = std::min(
+        map_rectangle_anchor_row_,
+        map_rectangle_end_row_
+    );
+    const std::uint32_t right = std::max(
+        map_rectangle_anchor_column_,
+        map_rectangle_end_column_
+    );
+    const std::uint32_t bottom = std::max(
+        map_rectangle_anchor_row_,
+        map_rectangle_end_row_
+    );
+    const std::uint32_t selected_column_count =
+        map_rectangle_tileset_right_ -
+        map_rectangle_tileset_left_ +
+        1;
+    const std::uint32_t selected_row_count =
+        map_rectangle_tileset_bottom_ -
+        map_rectangle_tileset_top_ +
+        1;
+    const bool map_changed =
+        map_edit_active_ &&
+        active_map_edit_before_ != map_tiles_;
+
+    map_rectangle_dragging_ = false;
+    finish_map_edit();
+
+    if (!map_changed) {
+        return;
+    }
+
+    std::cout << "[Midnight] Painted filled rectangle from map cell ("
+              << left
+              << ", "
+              << top
+              << ") to ("
+              << right
+              << ", "
+              << bottom
+              << ") with repeating "
+              << selected_column_count
+              << "x"
+              << selected_row_count
+              << " atlas selection\n";
 }
 
 bool Application::paint_map_selection(
@@ -2211,7 +2456,8 @@ bool Application::window_position_to_map_cell(
     const float x,
     const float y,
     std::uint32_t& column,
-    std::uint32_t& row
+    std::uint32_t& row,
+    const bool clamp_to_map
 ) const
 {
     if (window_.width() <= 0 || window_.height() <= 0) {
@@ -2223,19 +2469,28 @@ bool Application::window_position_to_map_cell(
     const float normalized_y =
         (2.0f * y / static_cast<float>(window_.height())) - 1.0f;
 
-    if (normalized_x < kMapCanvasLeft ||
-        normalized_x >= kMapCanvasRight ||
-        normalized_y < kMapCanvasTop ||
-        normalized_y >= kMapCanvasBottom) {
+    const bool position_is_in_map =
+        normalized_x >= kMapCanvasLeft &&
+        normalized_x < kMapCanvasRight &&
+        normalized_y >= kMapCanvasTop &&
+        normalized_y < kMapCanvasBottom;
+
+    if (!clamp_to_map && !position_is_in_map) {
         return false;
     }
 
-    const float map_x =
+    const float map_x = std::clamp(
         (normalized_x - kMapCanvasLeft) /
-        (kMapCanvasRight - kMapCanvasLeft);
-    const float map_y =
+            (kMapCanvasRight - kMapCanvasLeft),
+        0.0f,
+        1.0f
+    );
+    const float map_y = std::clamp(
         (normalized_y - kMapCanvasTop) /
-        (kMapCanvasBottom - kMapCanvasTop);
+            (kMapCanvasBottom - kMapCanvasTop),
+        0.0f,
+        1.0f
+    );
 
     column = std::min(
         static_cast<std::uint32_t>(
