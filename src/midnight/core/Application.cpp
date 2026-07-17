@@ -31,7 +31,10 @@ constexpr std::uint32_t kInitialSelectedTileColumn = 1;
 constexpr std::uint32_t kInitialSelectedTileRow = 0;
 constexpr std::uint32_t kSelectedRegionPreviewMaxScale = 4;
 constexpr std::uint32_t kSelectedRegionPreviewMaxWidth = 256;
-constexpr std::uint32_t kSelectedRegionPreviewMaxHeight = 512;
+constexpr std::uint32_t kSelectedRegionPreviewMaxHeight = 384;
+constexpr std::uint32_t kMapCanvasColumns = 8;
+constexpr std::uint32_t kMapCanvasRows = 6;
+constexpr std::uint32_t kMapCanvasScale = 2;
 constexpr std::size_t kOutdoorTilesetByteSize =
     static_cast<std::size_t>(kOutdoorTilesetWidth) *
     static_cast<std::size_t>(kOutdoorTilesetHeight) *
@@ -80,7 +83,40 @@ constexpr float kTilesetPreviewHalfHeight =
     static_cast<float>(kOutdoorTilesetHeight * kTilesetPreviewScale) /
     static_cast<float>(kInitialWindowHeight);
 
-constexpr float kSelectedRegionPreviewCenterX = 0.65f;
+constexpr float kRightPanelCenterX = 0.70f;
+constexpr float kSelectedRegionPreviewCenterY = -1.0f / 3.0f;
+constexpr float kMapCanvasCenterY = 0.60f;
+
+constexpr float kMapCanvasHalfWidth =
+    static_cast<float>(
+        kMapCanvasColumns *
+        kTilesetTileWidth *
+        kMapCanvasScale
+    ) /
+    static_cast<float>(kInitialWindowWidth);
+
+constexpr float kMapCanvasHalfHeight =
+    static_cast<float>(
+        kMapCanvasRows *
+        kTilesetTileHeight *
+        kMapCanvasScale
+    ) /
+    static_cast<float>(kInitialWindowHeight);
+
+constexpr float kMapCanvasLeft =
+    kRightPanelCenterX - kMapCanvasHalfWidth;
+constexpr float kMapCanvasTop =
+    kMapCanvasCenterY - kMapCanvasHalfHeight;
+constexpr float kMapCanvasRight =
+    kRightPanelCenterX + kMapCanvasHalfWidth;
+constexpr float kMapCanvasBottom =
+    kMapCanvasCenterY + kMapCanvasHalfHeight;
+constexpr float kMapCanvasCellWidth =
+    (2.0f * kMapCanvasHalfWidth) /
+    static_cast<float>(kMapCanvasColumns);
+constexpr float kMapCanvasCellHeight =
+    (2.0f * kMapCanvasHalfHeight) /
+    static_cast<float>(kMapCanvasRows);
 
 constexpr std::uint32_t kSelectionOutlineThickness = 2;
 constexpr float kSelectionOutlineRed = 1.0f;
@@ -103,17 +139,23 @@ constexpr float kSelectionOutlineHeight =
     (2.0f * static_cast<float>(kSelectionOutlineThickness)) /
     static_cast<float>(kInitialWindowHeight);
 
-constexpr std::uint32_t kTilesetGridThickness = 1;
+constexpr std::uint32_t kGridLineThickness = 1;
 constexpr float kTilesetGridRed = 0.22f;
 constexpr float kTilesetGridGreen = 0.20f;
 constexpr float kTilesetGridBlue = 0.32f;
+constexpr float kMapCanvasRed = 0.06f;
+constexpr float kMapCanvasGreen = 0.075f;
+constexpr float kMapCanvasBlue = 0.12f;
+constexpr float kMapGridRed = 0.24f;
+constexpr float kMapGridGreen = 0.27f;
+constexpr float kMapGridBlue = 0.38f;
 
-constexpr float kTilesetGridWidth =
-    (2.0f * static_cast<float>(kTilesetGridThickness)) /
+constexpr float kGridLineWidth =
+    (2.0f * static_cast<float>(kGridLineThickness)) /
     static_cast<float>(kInitialWindowWidth);
 
-constexpr float kTilesetGridHeight =
-    (2.0f * static_cast<float>(kTilesetGridThickness)) /
+constexpr float kGridLineHeight =
+    (2.0f * static_cast<float>(kGridLineThickness)) /
     static_cast<float>(kInitialWindowHeight);
 
 constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
@@ -219,12 +261,12 @@ constexpr TilesetGridVertices make_tileset_grid_vertices()
             static_cast<float>(column) * kAtlasTileWidth;
         const float left =
             column == kOutdoorTilesetColumns
-                ? x - kTilesetGridWidth
+                ? x - kGridLineWidth
                 : x;
         const float right =
             column == kOutdoorTilesetColumns
                 ? x
-                : x + kTilesetGridWidth;
+                : x + kGridLineWidth;
 
         append_grid_line(
             vertices,
@@ -244,12 +286,12 @@ constexpr TilesetGridVertices make_tileset_grid_vertices()
             static_cast<float>(row) * kAtlasTileHeight;
         const float top =
             row == kOutdoorTilesetRows
-                ? y - kTilesetGridHeight
+                ? y - kGridLineHeight
                 : y;
         const float bottom =
             row == kOutdoorTilesetRows
                 ? y
-                : y + kTilesetGridHeight;
+                : y + kGridLineHeight;
 
         append_grid_line(
             vertices,
@@ -268,6 +310,117 @@ constexpr TilesetGridVertices kTilesetGridVertices =
     make_tileset_grid_vertices();
 
 constexpr TilesetGridVertices kHiddenTilesetGridVertices{};
+
+constexpr std::size_t kMapGridLineCount =
+    (kMapCanvasColumns + 1) +
+    (kMapCanvasRows + 1);
+
+constexpr std::size_t kMapCanvasQuadCount =
+    1 + kMapGridLineCount;
+
+using MapCanvasVertices =
+    std::array<Vertex2D, kMapCanvasQuadCount * 4>;
+
+constexpr void append_map_canvas_quad(
+    MapCanvasVertices& vertices,
+    std::size_t& next_vertex,
+    const float left,
+    const float top,
+    const float right,
+    const float bottom,
+    const float red,
+    const float green,
+    const float blue
+)
+{
+    vertices[next_vertex++] =
+        solid_color_vertex(left, top, red, green, blue);
+    vertices[next_vertex++] =
+        solid_color_vertex(right, top, red, green, blue);
+    vertices[next_vertex++] =
+        solid_color_vertex(right, bottom, red, green, blue);
+    vertices[next_vertex++] =
+        solid_color_vertex(left, bottom, red, green, blue);
+}
+
+constexpr MapCanvasVertices make_map_canvas_vertices()
+{
+    MapCanvasVertices vertices{};
+    std::size_t next_vertex = 0;
+
+    append_map_canvas_quad(
+        vertices,
+        next_vertex,
+        kMapCanvasLeft,
+        kMapCanvasTop,
+        kMapCanvasRight,
+        kMapCanvasBottom,
+        kMapCanvasRed,
+        kMapCanvasGreen,
+        kMapCanvasBlue
+    );
+
+    for (std::uint32_t column = 0;
+         column <= kMapCanvasColumns;
+         ++column) {
+        const float x =
+            kMapCanvasLeft +
+            static_cast<float>(column) * kMapCanvasCellWidth;
+        const float left =
+            column == kMapCanvasColumns
+                ? x - kGridLineWidth
+                : x;
+        const float right =
+            column == kMapCanvasColumns
+                ? x
+                : x + kGridLineWidth;
+
+        append_map_canvas_quad(
+            vertices,
+            next_vertex,
+            left,
+            kMapCanvasTop,
+            right,
+            kMapCanvasBottom,
+            kMapGridRed,
+            kMapGridGreen,
+            kMapGridBlue
+        );
+    }
+
+    for (std::uint32_t row = 0;
+         row <= kMapCanvasRows;
+         ++row) {
+        const float y =
+            kMapCanvasTop +
+            static_cast<float>(row) * kMapCanvasCellHeight;
+        const float top =
+            row == kMapCanvasRows
+                ? y - kGridLineHeight
+                : y;
+        const float bottom =
+            row == kMapCanvasRows
+                ? y
+                : y + kGridLineHeight;
+
+        append_map_canvas_quad(
+            vertices,
+            next_vertex,
+            kMapCanvasLeft,
+            top,
+            kMapCanvasRight,
+            bottom,
+            kMapGridRed,
+            kMapGridGreen,
+            kMapGridBlue
+        );
+    }
+
+    return vertices;
+}
+
+constexpr MapCanvasVertices kMapCanvasVertices =
+    make_map_canvas_vertices();
 
 constexpr std::size_t kTileSelectionVertexCount = 12;
 
@@ -361,29 +514,29 @@ make_tile_selection_vertices(
 
     return {{
         Vertex2D{
-            kSelectedRegionPreviewCenterX - preview_half_width,
-            -preview_half_height,
+            kRightPanelCenterX - preview_half_width,
+            kSelectedRegionPreviewCenterY - preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.left,
             selected_region.top
         },
         Vertex2D{
-            kSelectedRegionPreviewCenterX + preview_half_width,
-            -preview_half_height,
+            kRightPanelCenterX + preview_half_width,
+            kSelectedRegionPreviewCenterY - preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.right,
             selected_region.top
         },
         Vertex2D{
-            kSelectedRegionPreviewCenterX + preview_half_width,
-            preview_half_height,
+            kRightPanelCenterX + preview_half_width,
+            kSelectedRegionPreviewCenterY + preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.right,
             selected_region.bottom
         },
         Vertex2D{
-            kSelectedRegionPreviewCenterX - preview_half_width,
-            preview_half_height,
+            kRightPanelCenterX - preview_half_width,
+            kSelectedRegionPreviewCenterY + preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.left,
             selected_region.bottom
@@ -402,17 +555,29 @@ make_tile_selection_vertices(
 constexpr std::size_t kQuadVertexCount =
     kTilesetPreviewVertices.size() +
     kTilesetGridVertices.size() +
+    kMapCanvasVertices.size() +
     kTileSelectionVertexCount;
 
 constexpr std::size_t kTilesetGridVertexByteOffset =
     sizeof(kTilesetPreviewVertices);
 
-constexpr std::size_t kTileSelectionVertexByteOffset =
+constexpr std::size_t kMapCanvasVertexByteOffset =
     sizeof(kTilesetPreviewVertices) +
     sizeof(kTilesetGridVertices);
 
+constexpr std::size_t kTileSelectionVertexByteOffset =
+    sizeof(kTilesetPreviewVertices) +
+    sizeof(kTilesetGridVertices) +
+    sizeof(kMapCanvasVertices);
+
 constexpr std::size_t kQuadIndexCount =
-    (1 + kTilesetGridLineCount + 1 + 4) * 6;
+    (
+        1 +
+        kTilesetGridLineCount +
+        kMapCanvasQuadCount +
+        1 +
+        4
+    ) * 6;
 
 using QuadIndices = std::array<std::uint16_t, kQuadIndexCount>;
 
@@ -452,10 +617,29 @@ constexpr QuadIndices make_quad_indices()
         );
     }
 
-    const std::uint16_t selection_first_vertex =
+    const std::uint16_t map_canvas_first_vertex =
         static_cast<std::uint16_t>(
             kTilesetPreviewVertices.size() +
             kTilesetGridVertices.size()
+        );
+
+    for (std::size_t quad = 0;
+         quad < kMapCanvasQuadCount;
+         ++quad) {
+        append_quad_indices(
+            indices,
+            next_index,
+            static_cast<std::uint16_t>(
+                map_canvas_first_vertex + quad * 4
+            )
+        );
+    }
+
+    const std::uint16_t selection_first_vertex =
+        static_cast<std::uint16_t>(
+            kTilesetPreviewVertices.size() +
+            kTilesetGridVertices.size() +
+            kMapCanvasVertices.size()
         );
 
     append_quad_indices(
@@ -590,6 +774,12 @@ Application::Application()
 
     upload_tileset_grid_vertices();
 
+    quad_vertex_buffer_.upload(
+        kMapCanvasVertices.data(),
+        sizeof(kMapCanvasVertices),
+        kMapCanvasVertexByteOffset
+    );
+
     upload_tile_selection_vertices();
 
     quad_index_buffer_.upload(
@@ -689,6 +879,13 @@ void Application::print_startup_info() const
               << "x"
               << kTilesetTileHeight
               << " pixels\n";
+    std::cout << "[Midnight] Blank map canvas: "
+              << kMapCanvasColumns
+              << "x"
+              << kMapCanvasRows
+              << " tiles at "
+              << kMapCanvasScale
+              << "x\n";
     std::cout << "[Midnight] Rendering the outdoor tileset at "
               << kTilesetPreviewScale
               << "x\n";
