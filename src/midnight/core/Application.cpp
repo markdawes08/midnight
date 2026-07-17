@@ -1110,6 +1110,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Left-click or drag across the map to paint the selected region\n";
     std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
+    std::cout << "[Midnight] Press F over the map to flood-fill with a 1x1 selection\n";
     std::cout << "[Midnight] Press Ctrl+Z to undo and Ctrl+Shift+Z to redo map edits\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press M to toggle the map grid\n";
@@ -1204,6 +1205,13 @@ void Application::poll_events()
                     case SDLK_M:
                         if (!event.key.repeat) {
                             toggle_map_grid();
+                        }
+                        break;
+
+                    case SDLK_F:
+                        if (!event.key.repeat) {
+                            flush_pending_map_hover();
+                            flood_fill_map();
                         }
                         break;
 
@@ -1490,6 +1498,126 @@ void Application::redo_map_edit()
     }
 
     std::cout << "[Midnight] Redid map edit\n";
+}
+
+void Application::flood_fill_map()
+{
+    if (!map_hover_visible_ ||
+        tile_selection_dragging_ ||
+        map_paint_dragging_ ||
+        map_erase_dragging_ ||
+        map_edit_active_) {
+        return;
+    }
+
+    if (selected_tile_left_ != selected_tile_right_ ||
+        selected_tile_top_ != selected_tile_bottom_) {
+        std::cout << "[Midnight] Flood fill requires a 1x1 atlas selection\n";
+        return;
+    }
+
+    const MapTile replacement{
+        .tileset_column = selected_tile_left_,
+        .tileset_row = selected_tile_top_,
+        .occupied = true
+    };
+    const std::size_t start_index =
+        static_cast<std::size_t>(hovered_map_row_) *
+            kMapCanvasColumns +
+        hovered_map_column_;
+    const MapTile target = map_tiles_.at(start_index);
+
+    if (target == replacement) {
+        return;
+    }
+
+    const auto matches_target = [&target](
+        const MapTile& map_tile
+    ) {
+        if (!target.occupied) {
+            return !map_tile.occupied;
+        }
+
+        return map_tile == target;
+    };
+
+    std::array<bool, kMapCanvasCellCount> queued{};
+    std::vector<std::size_t> pending_cells;
+    std::vector<std::size_t> filled_cells;
+    pending_cells.reserve(kMapCanvasCellCount);
+    filled_cells.reserve(kMapCanvasCellCount);
+
+    const auto queue_cell = [&](
+        const std::size_t cell_index
+    ) {
+        if (queued.at(cell_index) ||
+            !matches_target(map_tiles_.at(cell_index))) {
+            return;
+        }
+
+        queued.at(cell_index) = true;
+        pending_cells.push_back(cell_index);
+    };
+
+    queue_cell(start_index);
+
+    while (!pending_cells.empty()) {
+        const std::size_t cell_index = pending_cells.back();
+        pending_cells.pop_back();
+        filled_cells.push_back(cell_index);
+
+        const std::uint32_t column =
+            static_cast<std::uint32_t>(
+                cell_index % kMapCanvasColumns
+            );
+        const std::uint32_t row =
+            static_cast<std::uint32_t>(
+                cell_index / kMapCanvasColumns
+            );
+
+        if (column > 0) {
+            queue_cell(cell_index - 1);
+        }
+
+        if (column + 1 < kMapCanvasColumns) {
+            queue_cell(cell_index + 1);
+        }
+
+        if (row > 0) {
+            queue_cell(cell_index - kMapCanvasColumns);
+        }
+
+        if (row + 1 < kMapCanvasRows) {
+            queue_cell(cell_index + kMapCanvasColumns);
+        }
+    }
+
+    begin_map_edit();
+    vulkan_device_.wait_idle();
+
+    for (const std::size_t cell_index : filled_cells) {
+        const std::uint32_t column =
+            static_cast<std::uint32_t>(
+                cell_index % kMapCanvasColumns
+            );
+        const std::uint32_t row =
+            static_cast<std::uint32_t>(
+                cell_index / kMapCanvasColumns
+            );
+
+        map_tiles_.at(cell_index) = replacement;
+        upload_map_tile_vertices(column, row);
+    }
+
+    finish_map_edit();
+
+    std::cout << "[Midnight] Flood-filled "
+              << filled_cells.size()
+              << " connected map cells with atlas tile ("
+              << replacement.tileset_column
+              << ", "
+              << replacement.tileset_row
+              << ")\n";
 }
 
 bool Application::paint_map_selection(

@@ -47,6 +47,7 @@ private:
     void finish_map_edit();
     void undo_map_edit();
     void redo_map_edit();
+    void flood_fill_map();
     [[nodiscard]] bool paint_map_selection(float x, float y);
     [[nodiscard]] bool erase_map_tile(float x, float y);
     void pick_map_tile(float x, float y);
