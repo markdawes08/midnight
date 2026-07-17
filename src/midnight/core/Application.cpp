@@ -1,12 +1,15 @@
 #include "midnight/core/Application.hpp"
 
+#include "midnight/assets/Png.hpp"
 #include "midnight/renderer/Vertex2D.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
+#include <stdexcept>
 
 namespace midnight {
 namespace {
@@ -27,6 +30,9 @@ constexpr std::array<std::uint8_t, 16> kCheckerboardPixels{{
     255, 255, 255, 255,     16,  12,  24, 255,
      16,  12,  24, 255,    255, 255, 255, 255
 }};
+
+constexpr std::uint32_t kOutdoorTilesetWidth = 192;
+constexpr std::uint32_t kOutdoorTilesetHeight = 128;
 
 constexpr VkDeviceSize kQuadVertexBufferSize =
     sizeof(Vertex2D) * kQuadVertices.size();
@@ -117,6 +123,38 @@ Application::Application()
         kCheckerboardPixels.data(),
         static_cast<VkDeviceSize>(kCheckerboardPixels.size())
     );
+
+    const std::filesystem::path outdoor_tileset_path =
+        std::filesystem::path(MIDNIGHT_ASSET_DIR) /
+        "tilesets/basic_village/outdoor_tileset.png";
+
+    const RgbaImage outdoor_tileset =
+        load_png_rgba8(outdoor_tileset_path);
+
+    if (outdoor_tileset.width != kOutdoorTilesetWidth ||
+        outdoor_tileset.height != kOutdoorTilesetHeight) {
+        throw std::runtime_error(
+            "Unexpected outdoor tileset dimensions: expected " +
+            std::to_string(kOutdoorTilesetWidth) +
+            "x" +
+            std::to_string(kOutdoorTilesetHeight) +
+            ", got " +
+            std::to_string(outdoor_tileset.width) +
+            "x" +
+            std::to_string(outdoor_tileset.height)
+        );
+    }
+
+    std::cout << "[Midnight] Decoded PNG: "
+              << outdoor_tileset_path.lexically_normal().string()
+              << " "
+              << outdoor_tileset.width
+              << "x"
+              << outdoor_tileset.height
+              << " RGBA8 ("
+              << outdoor_tileset.byte_size()
+              << " bytes)"
+              << '\n';
 }
 
 int Application::run()

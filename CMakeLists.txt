@@ -11,6 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Vulkan REQUIRED COMPONENTS glslangValidator)
+find_package(PNG REQUIRED)
 
 find_package(SDL3 CONFIG QUIET)
 
@@ -88,6 +89,7 @@ add_custom_target(midnight_assets
 
 add_executable(midnight
     src/main.cpp
+    src/midnight/assets/Png.cpp
     src/midnight/core/Application.cpp
     src/midnight/core/File.cpp
     src/midnight/platform/SdlContext.cpp
@@ -117,6 +119,7 @@ target_include_directories(midnight
 target_link_libraries(midnight
     PRIVATE
         ${MIDNIGHT_SDL_TARGET}
+        PNG::PNG
         Vulkan::Vulkan
 )
 
