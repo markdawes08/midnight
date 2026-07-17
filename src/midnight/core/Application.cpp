@@ -104,6 +104,19 @@ constexpr float kSelectionOutlineHeight =
     (2.0f * static_cast<float>(kSelectionOutlineThickness)) /
     static_cast<float>(kInitialWindowHeight);
 
+constexpr std::uint32_t kTilesetGridThickness = 1;
+constexpr float kTilesetGridRed = 0.22f;
+constexpr float kTilesetGridGreen = 0.20f;
+constexpr float kTilesetGridBlue = 0.32f;
+
+constexpr float kTilesetGridWidth =
+    (2.0f * static_cast<float>(kTilesetGridThickness)) /
+    static_cast<float>(kInitialWindowWidth);
+
+constexpr float kTilesetGridHeight =
+    (2.0f * static_cast<float>(kTilesetGridThickness)) /
+    static_cast<float>(kInitialWindowHeight);
+
 constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
     Vertex2D{-kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
     Vertex2D{ kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
@@ -111,22 +124,149 @@ constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
     Vertex2D{-kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f}
 }};
 
-constexpr Vertex2D selection_outline_vertex(
+constexpr Vertex2D solid_color_vertex(
     const float position_x,
-    const float position_y
+    const float position_y,
+    const float red,
+    const float green,
+    const float blue
 )
 {
     return Vertex2D{
         position_x,
         position_y,
-        kSelectionOutlineRed,
-        kSelectionOutlineGreen,
-        kSelectionOutlineBlue,
+        red,
+        green,
+        blue,
         0.0f,
         0.0f,
         0
     };
 }
+
+constexpr Vertex2D selection_outline_vertex(
+    const float position_x,
+    const float position_y
+)
+{
+    return solid_color_vertex(
+        position_x,
+        position_y,
+        kSelectionOutlineRed,
+        kSelectionOutlineGreen,
+        kSelectionOutlineBlue
+    );
+}
+
+constexpr std::size_t kTilesetGridLineCount =
+    (kOutdoorTilesetColumns + 1) +
+    (kOutdoorTilesetRows + 1);
+
+constexpr std::size_t kTilesetGridVertexCount =
+    kTilesetGridLineCount * 4;
+
+using TilesetGridVertices =
+    std::array<Vertex2D, kTilesetGridVertexCount>;
+
+constexpr void append_grid_line(
+    TilesetGridVertices& vertices,
+    std::size_t& next_vertex,
+    const float left,
+    const float top,
+    const float right,
+    const float bottom
+)
+{
+    vertices[next_vertex++] = solid_color_vertex(
+        left,
+        top,
+        kTilesetGridRed,
+        kTilesetGridGreen,
+        kTilesetGridBlue
+    );
+    vertices[next_vertex++] = solid_color_vertex(
+        right,
+        top,
+        kTilesetGridRed,
+        kTilesetGridGreen,
+        kTilesetGridBlue
+    );
+    vertices[next_vertex++] = solid_color_vertex(
+        right,
+        bottom,
+        kTilesetGridRed,
+        kTilesetGridGreen,
+        kTilesetGridBlue
+    );
+    vertices[next_vertex++] = solid_color_vertex(
+        left,
+        bottom,
+        kTilesetGridRed,
+        kTilesetGridGreen,
+        kTilesetGridBlue
+    );
+}
+
+constexpr TilesetGridVertices make_tileset_grid_vertices()
+{
+    TilesetGridVertices vertices{};
+    std::size_t next_vertex = 0;
+
+    for (std::uint32_t column = 0;
+         column <= kOutdoorTilesetColumns;
+         ++column) {
+        const float x =
+            -kTilesetPreviewHalfWidth +
+            static_cast<float>(column) * kAtlasTileWidth;
+        const float left =
+            column == kOutdoorTilesetColumns
+                ? x - kTilesetGridWidth
+                : x;
+        const float right =
+            column == kOutdoorTilesetColumns
+                ? x
+                : x + kTilesetGridWidth;
+
+        append_grid_line(
+            vertices,
+            next_vertex,
+            left,
+            -kTilesetPreviewHalfHeight,
+            right,
+            kTilesetPreviewHalfHeight
+        );
+    }
+
+    for (std::uint32_t row = 0;
+         row <= kOutdoorTilesetRows;
+         ++row) {
+        const float y =
+            -kTilesetPreviewHalfHeight +
+            static_cast<float>(row) * kAtlasTileHeight;
+        const float top =
+            row == kOutdoorTilesetRows
+                ? y - kTilesetGridHeight
+                : y;
+        const float bottom =
+            row == kOutdoorTilesetRows
+                ? y
+                : y + kTilesetGridHeight;
+
+        append_grid_line(
+            vertices,
+            next_vertex,
+            -kTilesetPreviewHalfWidth,
+            top,
+            kTilesetPreviewHalfWidth,
+            bottom
+        );
+    }
+
+    return vertices;
+}
+
+constexpr TilesetGridVertices kTilesetGridVertices =
+    make_tileset_grid_vertices();
 
 constexpr std::size_t kTileSelectionVertexCount = 12;
 
@@ -196,22 +336,104 @@ make_tile_selection_vertices(
 }
 
 constexpr std::size_t kQuadVertexCount =
-    kTilesetPreviewVertices.size() + kTileSelectionVertexCount;
+    kTilesetPreviewVertices.size() +
+    kTilesetGridVertices.size() +
+    kTileSelectionVertexCount;
 
-constexpr std::array<std::uint16_t, 36> kQuadIndices{{
-    0, 1, 2,
-    2, 3, 0,
-    4, 5, 6,
-    6, 7, 4,
-    8, 9, 13,
-    13, 12, 8,
-    9, 10, 14,
-    14, 13, 9,
-    10, 11, 15,
-    15, 14, 10,
-    11, 8, 12,
-    12, 15, 11
-}};
+constexpr std::size_t kStaticVertexByteSize =
+    sizeof(kTilesetPreviewVertices) +
+    sizeof(kTilesetGridVertices);
+
+constexpr std::size_t kQuadIndexCount =
+    (1 + kTilesetGridLineCount + 1 + 4) * 6;
+
+using QuadIndices = std::array<std::uint16_t, kQuadIndexCount>;
+
+constexpr void append_quad_indices(
+    QuadIndices& indices,
+    std::size_t& next_index,
+    const std::uint16_t first_vertex
+)
+{
+    indices[next_index++] = first_vertex;
+    indices[next_index++] = first_vertex + 1;
+    indices[next_index++] = first_vertex + 2;
+    indices[next_index++] = first_vertex + 2;
+    indices[next_index++] = first_vertex + 3;
+    indices[next_index++] = first_vertex;
+}
+
+constexpr QuadIndices make_quad_indices()
+{
+    QuadIndices indices{};
+    std::size_t next_index = 0;
+
+    append_quad_indices(indices, next_index, 0);
+
+    const std::uint16_t grid_first_vertex =
+        static_cast<std::uint16_t>(kTilesetPreviewVertices.size());
+
+    for (std::size_t line = 0;
+         line < kTilesetGridLineCount;
+         ++line) {
+        append_quad_indices(
+            indices,
+            next_index,
+            static_cast<std::uint16_t>(
+                grid_first_vertex + line * 4
+            )
+        );
+    }
+
+    const std::uint16_t selection_first_vertex =
+        static_cast<std::uint16_t>(
+            kTilesetPreviewVertices.size() +
+            kTilesetGridVertices.size()
+        );
+
+    append_quad_indices(
+        indices,
+        next_index,
+        selection_first_vertex
+    );
+
+    const std::uint16_t outline_outer =
+        selection_first_vertex + 4;
+    const std::uint16_t outline_inner =
+        outline_outer + 4;
+
+    indices[next_index++] = outline_outer;
+    indices[next_index++] = outline_outer + 1;
+    indices[next_index++] = outline_inner + 1;
+    indices[next_index++] = outline_inner + 1;
+    indices[next_index++] = outline_inner;
+    indices[next_index++] = outline_outer;
+
+    indices[next_index++] = outline_outer + 1;
+    indices[next_index++] = outline_outer + 2;
+    indices[next_index++] = outline_inner + 2;
+    indices[next_index++] = outline_inner + 2;
+    indices[next_index++] = outline_inner + 1;
+    indices[next_index++] = outline_outer + 1;
+
+    indices[next_index++] = outline_outer + 2;
+    indices[next_index++] = outline_outer + 3;
+    indices[next_index++] = outline_inner + 3;
+    indices[next_index++] = outline_inner + 3;
+    indices[next_index++] = outline_inner + 2;
+    indices[next_index++] = outline_outer + 2;
+
+    indices[next_index++] = outline_outer + 3;
+    indices[next_index++] = outline_outer;
+    indices[next_index++] = outline_inner;
+    indices[next_index++] = outline_inner;
+    indices[next_index++] = outline_inner + 3;
+    indices[next_index++] = outline_outer + 3;
+
+    return indices;
+}
+
+constexpr QuadIndices kQuadIndices = make_quad_indices();
 
 constexpr VkDeviceSize kQuadVertexBufferSize =
     sizeof(Vertex2D) * kQuadVertexCount;
@@ -294,6 +516,12 @@ Application::Application()
 {
     quad_vertex_buffer_.upload(
         kTilesetPreviewVertices.data(),
+        sizeof(kTilesetPreviewVertices)
+    );
+
+    quad_vertex_buffer_.upload(
+        kTilesetGridVertices.data(),
+        sizeof(kTilesetGridVertices),
         sizeof(kTilesetPreviewVertices)
     );
 
@@ -585,7 +813,7 @@ void Application::upload_tile_selection_vertices()
     quad_vertex_buffer_.upload(
         vertices.data(),
         sizeof(vertices),
-        sizeof(kTilesetPreviewVertices)
+        kStaticVertexByteSize
     );
 }
 
