@@ -332,7 +332,7 @@ void Application::print_startup_info() const
               << ") at "
               << kSelectedTilePreviewScale
               << "x\n";
-    std::cout << "[Midnight] Use the arrow keys to select a tile\n";
+    std::cout << "[Midnight] Use the arrow keys or click the atlas to select a tile\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
 
@@ -373,6 +373,15 @@ void Application::poll_events()
                 }
                 break;
 
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    select_tile_at_window_position(
+                        event.button.x,
+                        event.button.y
+                    );
+                }
+                break;
+
             case SDL_EVENT_WINDOW_RESIZED:
                 window_.refresh_size();
                 std::cout << "[Midnight] Window resized: "
@@ -410,15 +419,31 @@ void Application::move_tile_selection(
         static_cast<int>(kOutdoorTilesetRows) - 1
     );
 
-    if (next_column == static_cast<int>(selected_tile_column_) &&
-        next_row == static_cast<int>(selected_tile_row_)) {
+    select_tile(
+        static_cast<std::uint32_t>(next_column),
+        static_cast<std::uint32_t>(next_row)
+    );
+}
+
+void Application::select_tile(
+    const std::uint32_t column,
+    const std::uint32_t row
+)
+{
+    if (column >= kOutdoorTilesetColumns ||
+        row >= kOutdoorTilesetRows) {
+        return;
+    }
+
+    if (column == selected_tile_column_ &&
+        row == selected_tile_row_) {
         return;
     }
 
     vulkan_device_.wait_idle();
 
-    selected_tile_column_ = static_cast<std::uint32_t>(next_column);
-    selected_tile_row_ = static_cast<std::uint32_t>(next_row);
+    selected_tile_column_ = column;
+    selected_tile_row_ = row;
 
     upload_selected_tile_preview_vertices();
 
@@ -427,6 +452,53 @@ void Application::move_tile_selection(
               << ", "
               << selected_tile_row_
               << ")\n";
+}
+
+void Application::select_tile_at_window_position(
+    const float x,
+    const float y
+)
+{
+    if (window_.width() <= 0 || window_.height() <= 0) {
+        return;
+    }
+
+    const float normalized_x =
+        (2.0f * x / static_cast<float>(window_.width())) - 1.0f;
+
+    const float normalized_y =
+        (2.0f * y / static_cast<float>(window_.height())) - 1.0f;
+
+    if (normalized_x < -kTilesetPreviewHalfWidth ||
+        normalized_x >= kTilesetPreviewHalfWidth ||
+        normalized_y < -kTilesetPreviewHalfHeight ||
+        normalized_y >= kTilesetPreviewHalfHeight) {
+        return;
+    }
+
+    const float atlas_x =
+        (normalized_x + kTilesetPreviewHalfWidth) /
+        (2.0f * kTilesetPreviewHalfWidth);
+
+    const float atlas_y =
+        (normalized_y + kTilesetPreviewHalfHeight) /
+        (2.0f * kTilesetPreviewHalfHeight);
+
+    const std::uint32_t column = std::min(
+        static_cast<std::uint32_t>(
+            atlas_x * static_cast<float>(kOutdoorTilesetColumns)
+        ),
+        kOutdoorTilesetColumns - 1
+    );
+
+    const std::uint32_t row = std::min(
+        static_cast<std::uint32_t>(
+            atlas_y * static_cast<float>(kOutdoorTilesetRows)
+        ),
+        kOutdoorTilesetRows - 1
+    );
+
+    select_tile(column, row);
 }
 
 void Application::upload_selected_tile_preview_vertices()
