@@ -16,6 +16,7 @@
 #include "midnight/renderer/vulkan/VulkanTransferContext.hpp"
 
 #include <cstdint>
+#include <vector>
 
 namespace midnight {
 
@@ -32,8 +33,19 @@ public:
     int run();
 
 private:
+    struct MapTile final {
+        std::uint32_t tileset_column = 0;
+        std::uint32_t tileset_row = 0;
+        bool occupied = false;
+    };
+
     void print_startup_info() const;
     void poll_events();
+    void paint_map_tile(float x, float y);
+    void upload_map_tile_vertices(
+        std::uint32_t column,
+        std::uint32_t row
+    );
     void update_map_hover(float x, float y);
     void clear_map_hover();
     [[nodiscard]] bool window_position_to_map_cell(
@@ -80,6 +92,7 @@ private:
     VulkanSampler texture_sampler_;
     VulkanTextureDescriptor texture_descriptor_;
     VulkanFrameRenderer vulkan_frame_renderer_;
+    std::vector<MapTile> map_tiles_;
 
     std::uint32_t selected_tile_left_ = 0;
     std::uint32_t selected_tile_top_ = 0;

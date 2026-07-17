@@ -35,6 +35,9 @@ constexpr std::uint32_t kSelectedRegionPreviewMaxHeight = 384;
 constexpr std::uint32_t kMapCanvasColumns = 8;
 constexpr std::uint32_t kMapCanvasRows = 6;
 constexpr std::uint32_t kMapCanvasScale = 2;
+constexpr std::size_t kMapCanvasCellCount =
+    static_cast<std::size_t>(kMapCanvasColumns) *
+    static_cast<std::size_t>(kMapCanvasRows);
 constexpr std::size_t kOutdoorTilesetByteSize =
     static_cast<std::size_t>(kOutdoorTilesetWidth) *
     static_cast<std::size_t>(kOutdoorTilesetHeight) *
@@ -448,6 +451,69 @@ constexpr MapCanvasVertices make_map_canvas_vertices()
 constexpr MapCanvasVertices kMapCanvasVertices =
     make_map_canvas_vertices();
 
+using MapTileCellVertices = std::array<Vertex2D, 4>;
+
+constexpr MapTileCellVertices make_map_tile_vertices(
+    const std::uint32_t map_column,
+    const std::uint32_t map_row,
+    const std::uint32_t tileset_column,
+    const std::uint32_t tileset_row
+)
+{
+    const float left =
+        kMapCanvasLeft +
+        static_cast<float>(map_column) * kMapCanvasCellWidth;
+    const float top =
+        kMapCanvasTop +
+        static_cast<float>(map_row) * kMapCanvasCellHeight;
+    const float right = left + kMapCanvasCellWidth;
+    const float bottom = top + kMapCanvasCellHeight;
+    const TextureRegion texture_region =
+        tile_texture_region(
+            tileset_column,
+            tileset_row,
+            tileset_column,
+            tileset_row
+        );
+
+    return {{
+        Vertex2D{
+            left, top,
+            1.0f, 1.0f, 1.0f,
+            texture_region.left,
+            texture_region.top
+        },
+        Vertex2D{
+            right, top,
+            1.0f, 1.0f, 1.0f,
+            texture_region.right,
+            texture_region.top
+        },
+        Vertex2D{
+            right, bottom,
+            1.0f, 1.0f, 1.0f,
+            texture_region.right,
+            texture_region.bottom
+        },
+        Vertex2D{
+            left, bottom,
+            1.0f, 1.0f, 1.0f,
+            texture_region.left,
+            texture_region.bottom
+        }
+    }};
+}
+
+constexpr MapTileCellVertices kEmptyMapTileCellVertices{};
+
+constexpr std::size_t kMapTileVertexCount =
+    kMapCanvasCellCount * MapTileCellVertices{}.size();
+
+using MapTileVertices =
+    std::array<Vertex2D, kMapTileVertexCount>;
+
+constexpr MapTileVertices kEmptyMapTileVertices{};
+
 constexpr std::size_t kMapHoverVertexCount = 8;
 
 using MapHoverVertices =
@@ -621,7 +687,8 @@ constexpr std::size_t kQuadVertexCount =
     kTilesetGridVertices.size() +
     kMapCanvasVertices.size() +
     kTileSelectionVertexCount +
-    kMapHoverVertexCount;
+    kMapHoverVertexCount +
+    kMapTileVertexCount;
 
 constexpr std::size_t kTilesetGridVertexByteOffset =
     sizeof(kTilesetPreviewVertices);
@@ -639,11 +706,16 @@ constexpr std::size_t kMapHoverVertexByteOffset =
     kTileSelectionVertexByteOffset +
     sizeof(Vertex2D) * kTileSelectionVertexCount;
 
+constexpr std::size_t kMapTileVertexByteOffset =
+    kMapHoverVertexByteOffset +
+    sizeof(Vertex2D) * kMapHoverVertexCount;
+
 constexpr std::size_t kQuadIndexCount =
     (
         1 +
         kTilesetGridLineCount +
         kMapCanvasQuadCount +
+        kMapCanvasCellCount +
         1 +
         4 +
         4
@@ -730,7 +802,33 @@ constexpr QuadIndices make_quad_indices()
             kTilesetGridVertices.size()
         );
 
-    for (std::size_t quad = 0;
+    append_quad_indices(
+        indices,
+        next_index,
+        map_canvas_first_vertex
+    );
+
+    const std::uint16_t map_tile_first_vertex =
+        map_canvas_first_vertex +
+        static_cast<std::uint16_t>(
+            kMapCanvasVertices.size() +
+            kTileSelectionVertexCount +
+            kMapHoverVertexCount
+        );
+
+    for (std::size_t cell = 0;
+         cell < kMapCanvasCellCount;
+         ++cell) {
+        append_quad_indices(
+            indices,
+            next_index,
+            static_cast<std::uint16_t>(
+                map_tile_first_vertex + cell * 4
+            )
+        );
+    }
+
+    for (std::size_t quad = 1;
          quad < kMapCanvasQuadCount;
          ++quad) {
         append_quad_indices(
@@ -852,6 +950,7 @@ Application::Application()
           static_cast<std::uint32_t>(kQuadIndices.size()),
           VK_INDEX_TYPE_UINT16
       ),
+      map_tiles_(kMapCanvasCellCount),
       selected_tile_left_(kInitialSelectedTileColumn),
       selected_tile_top_(kInitialSelectedTileRow),
       selected_tile_right_(kInitialSelectedTileColumn),
@@ -872,6 +971,12 @@ Application::Application()
 
     upload_tile_selection_vertices();
     upload_map_hover_vertices();
+
+    quad_vertex_buffer_.upload(
+        kEmptyMapTileVertices.data(),
+        sizeof(kEmptyMapTileVertices),
+        kMapTileVertexByteOffset
+    );
 
     quad_index_buffer_.upload(
         kQuadIndices.data(),
@@ -983,6 +1088,7 @@ void Application::print_startup_info() const
     print_tile_selection();
     std::cout << "[Midnight] Use the arrow keys, click, or drag across the atlas to select tiles\n";
     std::cout << "[Midnight] Move the cursor across the map to highlight cells\n";
+    std::cout << "[Midnight] Left-click the map to paint the selection's top-left tile\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
@@ -1084,6 +1190,10 @@ void Application::poll_events()
 
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     flush_pending_tile_selection_drag();
+                    paint_map_tile(
+                        event.button.x,
+                        event.button.y
+                    );
                     begin_tile_selection_drag(
                         event.button.x,
                         event.button.y
@@ -1172,6 +1282,81 @@ void Application::poll_events()
 
     flush_pending_tile_selection_drag();
     flush_pending_map_hover();
+}
+
+void Application::paint_map_tile(
+    const float x,
+    const float y
+)
+{
+    std::uint32_t column = 0;
+    std::uint32_t row = 0;
+
+    if (!window_position_to_map_cell(
+            x,
+            y,
+            column,
+            row
+        )) {
+        return;
+    }
+
+    const std::size_t cell_index =
+        static_cast<std::size_t>(row) * kMapCanvasColumns +
+        column;
+    MapTile& map_tile = map_tiles_.at(cell_index);
+
+    if (map_tile.occupied &&
+        map_tile.tileset_column == selected_tile_left_ &&
+        map_tile.tileset_row == selected_tile_top_) {
+        return;
+    }
+
+    vulkan_device_.wait_idle();
+
+    map_tile.tileset_column = selected_tile_left_;
+    map_tile.tileset_row = selected_tile_top_;
+    map_tile.occupied = true;
+
+    upload_map_tile_vertices(column, row);
+
+    std::cout << "[Midnight] Painted atlas tile ("
+              << map_tile.tileset_column
+              << ", "
+              << map_tile.tileset_row
+              << ") at map cell ("
+              << column
+              << ", "
+              << row
+              << ")\n";
+}
+
+void Application::upload_map_tile_vertices(
+    const std::uint32_t column,
+    const std::uint32_t row
+)
+{
+    const std::size_t cell_index =
+        static_cast<std::size_t>(row) * kMapCanvasColumns +
+        column;
+    const MapTile& map_tile = map_tiles_.at(cell_index);
+    const MapTileCellVertices vertices =
+        map_tile.occupied
+            ? make_map_tile_vertices(
+                  column,
+                  row,
+                  map_tile.tileset_column,
+                  map_tile.tileset_row
+              )
+            : kEmptyMapTileCellVertices;
+
+    quad_vertex_buffer_.upload(
+        vertices.data(),
+        sizeof(vertices),
+        kMapTileVertexByteOffset +
+            static_cast<VkDeviceSize>(cell_index) *
+            sizeof(vertices)
+    );
 }
 
 void Application::update_map_hover(
