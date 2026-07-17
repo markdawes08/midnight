@@ -59,6 +59,8 @@ private:
     void upload_map_hover_vertices();
     void toggle_tileset_grid();
     void upload_tileset_grid_vertices();
+    void toggle_map_grid();
+    void upload_map_grid_vertices();
     void move_tile_selection(int column_delta, int row_delta);
     void begin_tile_selection_drag(float x, float y);
     void update_tile_selection_drag(float x, float y);
@@ -109,6 +111,7 @@ private:
     std::uint32_t last_map_erase_column_ = 0;
     std::uint32_t last_map_erase_row_ = 0;
     bool tileset_grid_visible_ = true;
+    bool map_grid_visible_ = true;
     bool tile_selection_dragging_ = false;
     bool map_paint_dragging_ = false;
     bool map_erase_dragging_ = false;

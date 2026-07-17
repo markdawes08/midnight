@@ -347,8 +347,15 @@ constexpr std::size_t kMapGridLineCount =
 constexpr std::size_t kMapCanvasQuadCount =
     1 + kMapGridLineCount;
 
+constexpr std::size_t kMapCanvasBackgroundVertexCount = 4;
+constexpr std::size_t kMapGridVertexCount =
+    kMapGridLineCount * 4;
+
 using MapCanvasVertices =
     std::array<Vertex2D, kMapCanvasQuadCount * 4>;
+
+using MapGridVertices =
+    std::array<Vertex2D, kMapGridVertexCount>;
 
 constexpr void append_map_canvas_quad(
     MapCanvasVertices& vertices,
@@ -450,6 +457,13 @@ constexpr MapCanvasVertices make_map_canvas_vertices()
 
 constexpr MapCanvasVertices kMapCanvasVertices =
     make_map_canvas_vertices();
+
+constexpr MapGridVertices kHiddenMapGridVertices{};
+
+static_assert(
+    kMapCanvasVertices.size() ==
+    kMapCanvasBackgroundVertexCount + kMapGridVertexCount
+);
 
 using MapTileCellVertices = std::array<Vertex2D, 4>;
 
@@ -696,6 +710,10 @@ constexpr std::size_t kTilesetGridVertexByteOffset =
 constexpr std::size_t kMapCanvasVertexByteOffset =
     sizeof(kTilesetPreviewVertices) +
     sizeof(kTilesetGridVertices);
+
+constexpr std::size_t kMapGridVertexByteOffset =
+    kMapCanvasVertexByteOffset +
+    sizeof(Vertex2D) * kMapCanvasBackgroundVertexCount;
 
 constexpr std::size_t kTileSelectionVertexByteOffset =
     sizeof(kTilesetPreviewVertices) +
@@ -1092,6 +1110,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
+    std::cout << "[Midnight] Press M to toggle the map grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
 
@@ -1177,6 +1196,12 @@ void Application::poll_events()
                     case SDLK_G:
                         if (!event.key.repeat) {
                             toggle_tileset_grid();
+                        }
+                        break;
+
+                    case SDLK_M:
+                        if (!event.key.repeat) {
+                            toggle_map_grid();
                         }
                         break;
 
@@ -1744,6 +1769,33 @@ void Application::upload_tileset_grid_vertices()
         vertices.data(),
         sizeof(vertices),
         kTilesetGridVertexByteOffset
+    );
+}
+
+void Application::toggle_map_grid()
+{
+    vulkan_device_.wait_idle();
+
+    map_grid_visible_ = !map_grid_visible_;
+    upload_map_grid_vertices();
+
+    std::cout << "[Midnight] Map grid "
+              << (map_grid_visible_ ? "shown" : "hidden")
+              << '\n';
+}
+
+void Application::upload_map_grid_vertices()
+{
+    const Vertex2D* vertices =
+        map_grid_visible_
+            ? kMapCanvasVertices.data() +
+                  kMapCanvasBackgroundVertexCount
+            : kHiddenMapGridVertices.data();
+
+    quad_vertex_buffer_.upload(
+        vertices,
+        sizeof(kHiddenMapGridVertices),
+        kMapGridVertexByteOffset
     );
 }
 
