@@ -27,14 +27,14 @@ constexpr std::uint32_t kOutdoorTilesetColumns =
     kOutdoorTilesetWidth / kTilesetTileWidth;
 constexpr std::uint32_t kOutdoorTilesetRows =
     kOutdoorTilesetHeight / kTilesetTileHeight;
-constexpr std::uint32_t kTilesetPreviewScale = 3;
+constexpr std::uint32_t kTilesetPreviewScale = 2;
 constexpr std::uint32_t kInitialSelectedTileColumn = 1;
 constexpr std::uint32_t kInitialSelectedTileRow = 0;
-constexpr std::uint32_t kSelectedRegionPreviewMaxScale = 4;
-constexpr std::uint32_t kSelectedRegionPreviewMaxWidth = 256;
-constexpr std::uint32_t kSelectedRegionPreviewMaxHeight = 384;
-constexpr std::uint32_t kMapCanvasColumns = 8;
-constexpr std::uint32_t kMapCanvasRows = 6;
+constexpr std::uint32_t kSelectedRegionPreviewMaxScale = 3;
+constexpr std::uint32_t kSelectedRegionPreviewMaxWidth = 192;
+constexpr std::uint32_t kSelectedRegionPreviewMaxHeight = 256;
+constexpr std::uint32_t kMapCanvasColumns = 16;
+constexpr std::uint32_t kMapCanvasRows = 12;
 constexpr std::uint32_t kMapCanvasScale = 2;
 constexpr std::uint64_t kSwapchainResizeSettleMilliseconds = 250;
 constexpr std::size_t kMapCanvasCellCount =
@@ -88,9 +88,27 @@ constexpr float kTilesetPreviewHalfHeight =
     static_cast<float>(kOutdoorTilesetHeight * kTilesetPreviewScale) /
     static_cast<float>(kInitialWindowHeight);
 
-constexpr float kRightPanelCenterX = 0.70f;
-constexpr float kSelectedRegionPreviewCenterY = -1.0f / 3.0f;
-constexpr float kMapCanvasCenterY = 0.60f;
+constexpr float kTilesetPreviewCenterX = -0.60f;
+constexpr float kTilesetPreviewCenterY = -0.25f;
+constexpr float kTilesetPreviewLeft =
+    kTilesetPreviewCenterX - kTilesetPreviewHalfWidth;
+constexpr float kTilesetPreviewTop =
+    kTilesetPreviewCenterY - kTilesetPreviewHalfHeight;
+constexpr float kTilesetPreviewRight =
+    kTilesetPreviewCenterX + kTilesetPreviewHalfWidth;
+constexpr float kTilesetPreviewBottom =
+    kTilesetPreviewCenterY + kTilesetPreviewHalfHeight;
+
+constexpr float kSelectedRegionPreviewCenterX = -0.60f;
+constexpr float kSelectedRegionPreviewCenterY = 7.0f / 12.0f;
+constexpr float kSelectedRegionPreviewMaxHalfWidth =
+    static_cast<float>(kSelectedRegionPreviewMaxWidth) /
+    static_cast<float>(kInitialWindowWidth);
+constexpr float kSelectedRegionPreviewMaxHalfHeight =
+    static_cast<float>(kSelectedRegionPreviewMaxHeight) /
+    static_cast<float>(kInitialWindowHeight);
+constexpr float kMapCanvasCenterX = 0.35f;
+constexpr float kMapCanvasCenterY = 0.0f;
 
 constexpr float kMapCanvasHalfWidth =
     static_cast<float>(
@@ -109,11 +127,11 @@ constexpr float kMapCanvasHalfHeight =
     static_cast<float>(kInitialWindowHeight);
 
 constexpr float kMapCanvasLeft =
-    kRightPanelCenterX - kMapCanvasHalfWidth;
+    kMapCanvasCenterX - kMapCanvasHalfWidth;
 constexpr float kMapCanvasTop =
     kMapCanvasCenterY - kMapCanvasHalfHeight;
 constexpr float kMapCanvasRight =
-    kRightPanelCenterX + kMapCanvasHalfWidth;
+    kMapCanvasCenterX + kMapCanvasHalfWidth;
 constexpr float kMapCanvasBottom =
     kMapCanvasCenterY + kMapCanvasHalfHeight;
 constexpr float kMapCanvasCellWidth =
@@ -122,6 +140,37 @@ constexpr float kMapCanvasCellWidth =
 constexpr float kMapCanvasCellHeight =
     (2.0f * kMapCanvasHalfHeight) /
     static_cast<float>(kMapCanvasRows);
+
+static_assert(kTilesetPreviewLeft >= -1.0f);
+static_assert(kTilesetPreviewTop >= -1.0f);
+static_assert(kTilesetPreviewRight <= 1.0f);
+static_assert(kTilesetPreviewBottom <= 1.0f);
+static_assert(kMapCanvasLeft >= -1.0f);
+static_assert(kMapCanvasTop >= -1.0f);
+static_assert(kMapCanvasRight <= 1.0f);
+static_assert(kMapCanvasBottom <= 1.0f);
+static_assert(
+    kSelectedRegionPreviewCenterX -
+        kSelectedRegionPreviewMaxHalfWidth >= -1.0f
+);
+static_assert(
+    kSelectedRegionPreviewCenterX +
+        kSelectedRegionPreviewMaxHalfWidth <= 1.0f
+);
+static_assert(
+    kSelectedRegionPreviewCenterY -
+        kSelectedRegionPreviewMaxHalfHeight >= -1.0f
+);
+static_assert(
+    kSelectedRegionPreviewCenterY +
+        kSelectedRegionPreviewMaxHalfHeight <= 1.0f
+);
+static_assert(kTilesetPreviewRight < kMapCanvasLeft);
+static_assert(
+    kTilesetPreviewBottom <
+        kSelectedRegionPreviewCenterY -
+            kSelectedRegionPreviewMaxHalfHeight
+);
 
 constexpr std::uint32_t kSelectionOutlineThickness = 2;
 constexpr float kSelectionOutlineRed = 1.0f;
@@ -176,10 +225,10 @@ constexpr float kMapHoverOutlineHeight =
     static_cast<float>(kInitialWindowHeight);
 
 constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
-    Vertex2D{-kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
-    Vertex2D{ kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
-    Vertex2D{ kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-    Vertex2D{-kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f}
+    Vertex2D{kTilesetPreviewLeft,  kTilesetPreviewTop,    1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
+    Vertex2D{kTilesetPreviewRight, kTilesetPreviewTop,    1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
+    Vertex2D{kTilesetPreviewRight, kTilesetPreviewBottom, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    Vertex2D{kTilesetPreviewLeft,  kTilesetPreviewBottom, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f}
 }};
 
 constexpr Vertex2D solid_color_vertex(
@@ -288,7 +337,7 @@ constexpr TilesetGridVertices make_tileset_grid_vertices()
          column <= kOutdoorTilesetColumns;
          ++column) {
         const float x =
-            -kTilesetPreviewHalfWidth +
+            kTilesetPreviewLeft +
             static_cast<float>(column) * kAtlasTileWidth;
         const float left =
             column == kOutdoorTilesetColumns
@@ -303,9 +352,9 @@ constexpr TilesetGridVertices make_tileset_grid_vertices()
             vertices,
             next_vertex,
             left,
-            -kTilesetPreviewHalfHeight,
+            kTilesetPreviewTop,
             right,
-            kTilesetPreviewHalfHeight
+            kTilesetPreviewBottom
         );
     }
 
@@ -313,7 +362,7 @@ constexpr TilesetGridVertices make_tileset_grid_vertices()
          row <= kOutdoorTilesetRows;
          ++row) {
         const float y =
-            -kTilesetPreviewHalfHeight +
+            kTilesetPreviewTop +
             static_cast<float>(row) * kAtlasTileHeight;
         const float top =
             row == kOutdoorTilesetRows
@@ -327,9 +376,9 @@ constexpr TilesetGridVertices make_tileset_grid_vertices()
         append_grid_line(
             vertices,
             next_vertex,
-            -kTilesetPreviewHalfWidth,
+            kTilesetPreviewLeft,
             top,
-            kTilesetPreviewHalfWidth,
+            kTilesetPreviewRight,
             bottom
         );
     }
@@ -589,8 +638,8 @@ constexpr std::uint32_t selected_region_preview_scale(
     );
 }
 
-static_assert(selected_region_preview_scale(1, 1) == 4);
-static_assert(selected_region_preview_scale(3, 2) == 4);
+static_assert(selected_region_preview_scale(1, 1) == 3);
+static_assert(selected_region_preview_scale(3, 2) == 3);
 static_assert(
     selected_region_preview_scale(
         kOutdoorTilesetColumns,
@@ -639,18 +688,18 @@ make_tile_selection_vertices(
         static_cast<float>(kInitialWindowHeight);
 
     const float tile_left =
-        -kTilesetPreviewHalfWidth +
+        kTilesetPreviewLeft +
         static_cast<float>(selected_left) * kAtlasTileWidth;
 
     const float tile_top =
-        -kTilesetPreviewHalfHeight +
+        kTilesetPreviewTop +
         static_cast<float>(selected_top) * kAtlasTileHeight;
 
     const float tile_right =
-        -kTilesetPreviewHalfWidth +
+        kTilesetPreviewLeft +
         static_cast<float>(selected_right + 1) * kAtlasTileWidth;
     const float tile_bottom =
-        -kTilesetPreviewHalfHeight +
+        kTilesetPreviewTop +
         static_cast<float>(selected_bottom + 1) * kAtlasTileHeight;
 
     const float inner_left = tile_left + kSelectionOutlineWidth;
@@ -660,28 +709,28 @@ make_tile_selection_vertices(
 
     return {{
         Vertex2D{
-            kRightPanelCenterX - preview_half_width,
+            kSelectedRegionPreviewCenterX - preview_half_width,
             kSelectedRegionPreviewCenterY - preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.left,
             selected_region.top
         },
         Vertex2D{
-            kRightPanelCenterX + preview_half_width,
+            kSelectedRegionPreviewCenterX + preview_half_width,
             kSelectedRegionPreviewCenterY - preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.right,
             selected_region.top
         },
         Vertex2D{
-            kRightPanelCenterX + preview_half_width,
+            kSelectedRegionPreviewCenterX + preview_half_width,
             kSelectedRegionPreviewCenterY + preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.right,
             selected_region.bottom
         },
         Vertex2D{
-            kRightPanelCenterX - preview_half_width,
+            kSelectedRegionPreviewCenterX - preview_half_width,
             kSelectedRegionPreviewCenterY + preview_half_height,
             1.0f, 1.0f, 1.0f,
             selected_region.left,
@@ -2389,25 +2438,25 @@ bool Application::window_position_to_tile(
         (2.0f * y / static_cast<float>(window_.height())) - 1.0f;
 
     const bool position_is_in_atlas =
-        normalized_x >= -kTilesetPreviewHalfWidth &&
-        normalized_x < kTilesetPreviewHalfWidth &&
-        normalized_y >= -kTilesetPreviewHalfHeight &&
-        normalized_y < kTilesetPreviewHalfHeight;
+        normalized_x >= kTilesetPreviewLeft &&
+        normalized_x < kTilesetPreviewRight &&
+        normalized_y >= kTilesetPreviewTop &&
+        normalized_y < kTilesetPreviewBottom;
 
     if (!clamp_to_atlas && !position_is_in_atlas) {
         return false;
     }
 
     const float atlas_x = std::clamp(
-        (normalized_x + kTilesetPreviewHalfWidth) /
-            (2.0f * kTilesetPreviewHalfWidth),
+        (normalized_x - kTilesetPreviewLeft) /
+            (kTilesetPreviewRight - kTilesetPreviewLeft),
         0.0f,
         1.0f
     );
 
     const float atlas_y = std::clamp(
-        (normalized_y + kTilesetPreviewHalfHeight) /
-            (2.0f * kTilesetPreviewHalfHeight),
+        (normalized_y - kTilesetPreviewTop) /
+            (kTilesetPreviewBottom - kTilesetPreviewTop),
         0.0f,
         1.0f
     );
