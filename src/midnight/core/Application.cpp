@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 
 namespace midnight {
 namespace {
@@ -1109,6 +1110,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Left-click or drag across the map to paint the selected region\n";
     std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
+    std::cout << "[Midnight] Press Ctrl+Z to undo the last map edit\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press M to toggle the map grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
@@ -1205,6 +1207,14 @@ void Application::poll_events()
                         }
                         break;
 
+                    case SDLK_Z:
+                        if (!event.key.repeat &&
+                            (event.key.mod & SDL_KMOD_CTRL) != 0 &&
+                            (event.key.mod & SDL_KMOD_SHIFT) == 0) {
+                            undo_map_edit();
+                        }
+                        break;
+
                     default:
                         break;
                 }
@@ -1219,12 +1229,14 @@ void Application::poll_events()
                     !map_erase_dragging_) {
                     flush_pending_tile_selection_drag();
                     map_paint_dragging_ = false;
+                    begin_map_edit();
                     map_paint_dragging_ = paint_map_selection(
                         event.button.x,
                         event.button.y
                     );
 
                     if (!map_paint_dragging_) {
+                        finish_map_edit();
                         begin_tile_selection_drag(
                             event.button.x,
                             event.button.y
@@ -1234,10 +1246,15 @@ void Application::poll_events()
                            !map_paint_dragging_ &&
                            !tile_selection_dragging_) {
                     map_erase_dragging_ = false;
+                    begin_map_edit();
                     map_erase_dragging_ = erase_map_tile(
                         event.button.x,
                         event.button.y
                     );
+
+                    if (!map_erase_dragging_) {
+                        finish_map_edit();
+                    }
                 } else if (event.button.button == SDL_BUTTON_MIDDLE &&
                            !map_paint_dragging_ &&
                            !map_erase_dragging_ &&
@@ -1257,6 +1274,7 @@ void Application::poll_events()
                             event.motion.y
                         );
                     } else {
+                        finish_map_edit();
                         map_paint_dragging_ = false;
                     }
                 }
@@ -1268,6 +1286,7 @@ void Application::poll_events()
                             event.motion.y
                         );
                     } else {
+                        finish_map_edit();
                         map_erase_dragging_ = false;
                     }
                 }
@@ -1304,6 +1323,10 @@ void Application::poll_events()
                         );
                     }
 
+                    if (map_paint_dragging_) {
+                        finish_map_edit();
+                    }
+
                     map_paint_dragging_ = false;
                     tile_selection_drag_update_pending = false;
                     end_tile_selection_drag(
@@ -1316,6 +1339,10 @@ void Application::poll_events()
                             event.button.x,
                             event.button.y
                         );
+                    }
+
+                    if (map_erase_dragging_) {
+                        finish_map_edit();
                     }
 
                     map_erase_dragging_ = false;
@@ -1348,6 +1375,7 @@ void Application::poll_events()
                     print_tile_selection();
                 }
 
+                finish_map_edit();
                 map_paint_dragging_ = false;
                 map_erase_dragging_ = false;
                 map_hover_update_pending = false;
@@ -1371,6 +1399,62 @@ void Application::poll_events()
 
     flush_pending_tile_selection_drag();
     flush_pending_map_hover();
+}
+
+void Application::begin_map_edit()
+{
+    if (map_edit_active_) {
+        return;
+    }
+
+    active_map_edit_before_ = map_tiles_;
+    map_edit_active_ = true;
+}
+
+void Application::finish_map_edit()
+{
+    if (!map_edit_active_) {
+        return;
+    }
+
+    if (active_map_edit_before_ != map_tiles_) {
+        map_undo_stack_.push_back(
+            std::move(active_map_edit_before_)
+        );
+    } else {
+        active_map_edit_before_.clear();
+    }
+
+    map_edit_active_ = false;
+}
+
+void Application::undo_map_edit()
+{
+    if (map_edit_active_) {
+        return;
+    }
+
+    if (map_undo_stack_.empty()) {
+        std::cout << "[Midnight] Nothing to undo\n";
+        return;
+    }
+
+    vulkan_device_.wait_idle();
+
+    map_tiles_ = std::move(map_undo_stack_.back());
+    map_undo_stack_.pop_back();
+
+    for (std::uint32_t row = 0;
+         row < kMapCanvasRows;
+         ++row) {
+        for (std::uint32_t column = 0;
+             column < kMapCanvasColumns;
+             ++column) {
+            upload_map_tile_vertices(column, row);
+        }
+    }
+
+    std::cout << "[Midnight] Undid map edit\n";
 }
 
 bool Application::paint_map_selection(

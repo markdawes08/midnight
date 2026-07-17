@@ -37,10 +37,15 @@ private:
         std::uint32_t tileset_column = 0;
         std::uint32_t tileset_row = 0;
         bool occupied = false;
+
+        bool operator==(const MapTile&) const = default;
     };
 
     void print_startup_info() const;
     void poll_events();
+    void begin_map_edit();
+    void finish_map_edit();
+    void undo_map_edit();
     [[nodiscard]] bool paint_map_selection(float x, float y);
     [[nodiscard]] bool erase_map_tile(float x, float y);
     void pick_map_tile(float x, float y);
@@ -97,6 +102,8 @@ private:
     VulkanTextureDescriptor texture_descriptor_;
     VulkanFrameRenderer vulkan_frame_renderer_;
     std::vector<MapTile> map_tiles_;
+    std::vector<MapTile> active_map_edit_before_;
+    std::vector<std::vector<MapTile>> map_undo_stack_;
 
     std::uint32_t selected_tile_left_ = 0;
     std::uint32_t selected_tile_top_ = 0;
@@ -115,6 +122,7 @@ private:
     bool tile_selection_dragging_ = false;
     bool map_paint_dragging_ = false;
     bool map_erase_dragging_ = false;
+    bool map_edit_active_ = false;
     bool map_hover_visible_ = false;
     bool running_ = true;
 };
