@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
@@ -14,25 +15,35 @@
 namespace midnight {
 namespace {
 
+constexpr std::uint32_t kInitialWindowWidth = 1280;
+constexpr std::uint32_t kInitialWindowHeight = 720;
+constexpr std::uint32_t kOutdoorTilesetWidth = 192;
+constexpr std::uint32_t kOutdoorTilesetHeight = 128;
+constexpr std::uint32_t kTilesetPreviewScale = 3;
+constexpr std::size_t kOutdoorTilesetByteSize =
+    static_cast<std::size_t>(kOutdoorTilesetWidth) *
+    static_cast<std::size_t>(kOutdoorTilesetHeight) *
+    RgbaImage::bytes_per_pixel;
+
+constexpr float kTilesetPreviewHalfWidth =
+    static_cast<float>(kOutdoorTilesetWidth * kTilesetPreviewScale) /
+    static_cast<float>(kInitialWindowWidth);
+
+constexpr float kTilesetPreviewHalfHeight =
+    static_cast<float>(kOutdoorTilesetHeight * kTilesetPreviewScale) /
+    static_cast<float>(kInitialWindowHeight);
+
 constexpr std::array<Vertex2D, 4> kQuadVertices{{
-    Vertex2D{-0.55f, -0.55f, 0.95f, 0.25f, 0.45f, 0.0f, 0.0f },
-    Vertex2D{ 0.55f, -0.55f, 0.25f, 0.90f, 0.70f, 1.0f, 0.0f },
-    Vertex2D{ 0.55f,  0.55f, 0.35f, 0.45f, 1.00f, 1.0f, 1.0f },
-    Vertex2D{-0.55f,  0.55f, 0.95f, 0.80f, 0.25f, 0.0f, 1.0f }
+    Vertex2D{-kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
+    Vertex2D{ kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
+    Vertex2D{ kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    Vertex2D{-kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f}
 }};
 
 constexpr std::array<std::uint16_t, 6> kQuadIndices{{
     0, 1, 2,
     2, 3, 0
 }};
-
-constexpr std::array<std::uint8_t, 16> kCheckerboardPixels{{
-    255, 255, 255, 255,     16,  12,  24, 255,
-     16,  12,  24, 255,    255, 255, 255, 255
-}};
-
-constexpr std::uint32_t kOutdoorTilesetWidth = 192;
-constexpr std::uint32_t kOutdoorTilesetHeight = 128;
 
 constexpr VkDeviceSize kQuadVertexBufferSize =
     sizeof(Vertex2D) * kQuadVertices.size();
@@ -46,8 +57,8 @@ Application::Application()
     : sdl_(),
       window_(Window::CreateInfo{
           .title = "Midnight",
-          .width = 1280,
-          .height = 720,
+          .width = static_cast<int>(kInitialWindowWidth),
+          .height = static_cast<int>(kInitialWindowHeight),
           .resizable = true,
           .vulkan = true
       }),
@@ -79,7 +90,10 @@ Application::Application()
       texture_image_(
           vulkan_device_,
           VulkanImage::CreateInfo{
-              .extent = VkExtent2D{.width = 2, .height = 2},
+              .extent = VkExtent2D{
+                  .width = kOutdoorTilesetWidth,
+                  .height = kOutdoorTilesetHeight
+              },
               .format = VK_FORMAT_R8G8B8A8_SRGB,
               .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
                   VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -118,12 +132,6 @@ Application::Application()
         kQuadIndexBufferSize
     );
 
-    vulkan_transfer_context_.upload_to_new_sampled_image(
-        texture_image_,
-        kCheckerboardPixels.data(),
-        static_cast<VkDeviceSize>(kCheckerboardPixels.size())
-    );
-
     const std::filesystem::path outdoor_tileset_path =
         std::filesystem::path(MIDNIGHT_ASSET_DIR) /
         "tilesets/basic_village/outdoor_tileset.png";
@@ -145,6 +153,15 @@ Application::Application()
         );
     }
 
+    if (outdoor_tileset.byte_size() != kOutdoorTilesetByteSize) {
+        throw std::runtime_error(
+            "Unexpected outdoor tileset byte size: expected " +
+            std::to_string(kOutdoorTilesetByteSize) +
+            ", got " +
+            std::to_string(outdoor_tileset.byte_size())
+        );
+    }
+
     std::cout << "[Midnight] Decoded PNG: "
               << outdoor_tileset_path.lexically_normal().string()
               << " "
@@ -155,6 +172,12 @@ Application::Application()
               << outdoor_tileset.byte_size()
               << " bytes)"
               << '\n';
+
+    vulkan_transfer_context_.upload_to_new_sampled_image(
+        texture_image_,
+        outdoor_tileset.pixels.data(),
+        static_cast<VkDeviceSize>(outdoor_tileset.byte_size())
+    );
 }
 
 int Application::run()
@@ -192,7 +215,9 @@ void Application::print_startup_info() const
               << "x"
               << window_.pixel_height()
               << '\n';
-    std::cout << "[Midnight] Rendering a textured indexed quad\n";
+    std::cout << "[Midnight] Rendering the outdoor tileset at "
+              << kTilesetPreviewScale
+              << "x scale\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
 
