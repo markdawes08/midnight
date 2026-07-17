@@ -41,7 +41,7 @@ private:
 
     void print_startup_info() const;
     void poll_events();
-    void paint_map_tile(float x, float y);
+    [[nodiscard]] bool paint_map_tile(float x, float y);
     void upload_map_tile_vertices(
         std::uint32_t column,
         std::uint32_t row
@@ -102,8 +102,11 @@ private:
     std::uint32_t tile_selection_drag_anchor_row_ = 0;
     std::uint32_t hovered_map_column_ = 0;
     std::uint32_t hovered_map_row_ = 0;
+    std::uint32_t last_map_paint_column_ = 0;
+    std::uint32_t last_map_paint_row_ = 0;
     bool tileset_grid_visible_ = true;
     bool tile_selection_dragging_ = false;
+    bool map_paint_dragging_ = false;
     bool map_hover_visible_ = false;
     bool running_ = true;
 };

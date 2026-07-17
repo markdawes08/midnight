@@ -1088,7 +1088,7 @@ void Application::print_startup_info() const
     print_tile_selection();
     std::cout << "[Midnight] Use the arrow keys, click, or drag across the atlas to select tiles\n";
     std::cout << "[Midnight] Move the cursor across the map to highlight cells\n";
-    std::cout << "[Midnight] Left-click the map to paint the selection's top-left tile\n";
+    std::cout << "[Midnight] Left-click or drag across the map to paint the selection's top-left tile\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
 }
@@ -1190,18 +1190,33 @@ void Application::poll_events()
 
                 if (event.button.button == SDL_BUTTON_LEFT) {
                     flush_pending_tile_selection_drag();
-                    paint_map_tile(
+                    map_paint_dragging_ = false;
+                    map_paint_dragging_ = paint_map_tile(
                         event.button.x,
                         event.button.y
                     );
-                    begin_tile_selection_drag(
-                        event.button.x,
-                        event.button.y
-                    );
+
+                    if (!map_paint_dragging_) {
+                        begin_tile_selection_drag(
+                            event.button.x,
+                            event.button.y
+                        );
+                    }
                 }
                 break;
 
             case SDL_EVENT_MOUSE_MOTION:
+                if (map_paint_dragging_) {
+                    if ((event.motion.state & SDL_BUTTON_LMASK) != 0) {
+                        (void)paint_map_tile(
+                            event.motion.x,
+                            event.motion.y
+                        );
+                    } else {
+                        map_paint_dragging_ = false;
+                    }
+                }
+
                 if (tile_selection_dragging_) {
                     if ((event.motion.state & SDL_BUTTON_LMASK) != 0) {
                         pending_tile_selection_drag_x = event.motion.x;
@@ -1227,6 +1242,14 @@ void Application::poll_events()
                 map_hover_update_pending = true;
 
                 if (event.button.button == SDL_BUTTON_LEFT) {
+                    if (map_paint_dragging_) {
+                        (void)paint_map_tile(
+                            event.button.x,
+                            event.button.y
+                        );
+                    }
+
+                    map_paint_dragging_ = false;
                     tile_selection_drag_update_pending = false;
                     end_tile_selection_drag(
                         event.button.x,
@@ -1261,6 +1284,7 @@ void Application::poll_events()
                     print_tile_selection();
                 }
 
+                map_paint_dragging_ = false;
                 map_hover_update_pending = false;
                 clear_map_hover();
                 break;
@@ -1284,7 +1308,7 @@ void Application::poll_events()
     flush_pending_map_hover();
 }
 
-void Application::paint_map_tile(
+bool Application::paint_map_tile(
     const float x,
     const float y
 )
@@ -1298,8 +1322,17 @@ void Application::paint_map_tile(
             column,
             row
         )) {
-        return;
+        return false;
     }
+
+    if (map_paint_dragging_ &&
+        column == last_map_paint_column_ &&
+        row == last_map_paint_row_) {
+        return true;
+    }
+
+    last_map_paint_column_ = column;
+    last_map_paint_row_ = row;
 
     const std::size_t cell_index =
         static_cast<std::size_t>(row) * kMapCanvasColumns +
@@ -1309,7 +1342,7 @@ void Application::paint_map_tile(
     if (map_tile.occupied &&
         map_tile.tileset_column == selected_tile_left_ &&
         map_tile.tileset_row == selected_tile_top_) {
-        return;
+        return true;
     }
 
     vulkan_device_.wait_idle();
@@ -1329,6 +1362,8 @@ void Application::paint_map_tile(
               << ", "
               << row
               << ")\n";
+
+    return true;
 }
 
 void Application::upload_map_tile_vertices(
