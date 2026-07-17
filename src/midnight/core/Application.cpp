@@ -83,6 +83,27 @@ constexpr float kSelectedTilePreviewHalfHeight =
     static_cast<float>(kTilesetTileHeight * kSelectedTilePreviewScale) /
     static_cast<float>(kInitialWindowHeight);
 
+constexpr std::uint32_t kSelectionOutlineThickness = 2;
+constexpr float kSelectionOutlineRed = 1.0f;
+constexpr float kSelectionOutlineGreen = 0.85f;
+constexpr float kSelectionOutlineBlue = 0.15f;
+
+constexpr float kAtlasTileWidth =
+    (2.0f * kTilesetPreviewHalfWidth) /
+    static_cast<float>(kOutdoorTilesetColumns);
+
+constexpr float kAtlasTileHeight =
+    (2.0f * kTilesetPreviewHalfHeight) /
+    static_cast<float>(kOutdoorTilesetRows);
+
+constexpr float kSelectionOutlineWidth =
+    (2.0f * static_cast<float>(kSelectionOutlineThickness)) /
+    static_cast<float>(kInitialWindowWidth);
+
+constexpr float kSelectionOutlineHeight =
+    (2.0f * static_cast<float>(kSelectionOutlineThickness)) /
+    static_cast<float>(kInitialWindowHeight);
+
 constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
     Vertex2D{-kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
     Vertex2D{ kTilesetPreviewHalfWidth, -kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
@@ -90,13 +111,49 @@ constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
     Vertex2D{-kTilesetPreviewHalfWidth,  kTilesetPreviewHalfHeight, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f}
 }};
 
-constexpr std::array<Vertex2D, 4> make_selected_tile_preview_vertices(
+constexpr Vertex2D selection_outline_vertex(
+    const float position_x,
+    const float position_y
+)
+{
+    return Vertex2D{
+        position_x,
+        position_y,
+        kSelectionOutlineRed,
+        kSelectionOutlineGreen,
+        kSelectionOutlineBlue,
+        0.0f,
+        0.0f,
+        0
+    };
+}
+
+constexpr std::size_t kTileSelectionVertexCount = 12;
+
+constexpr std::array<Vertex2D, kTileSelectionVertexCount>
+make_tile_selection_vertices(
     const std::uint32_t selected_column,
     const std::uint32_t selected_row
 )
 {
     const TextureRegion selected_region =
         tile_texture_region(selected_column, selected_row);
+
+    const float tile_left =
+        -kTilesetPreviewHalfWidth +
+        static_cast<float>(selected_column) * kAtlasTileWidth;
+
+    const float tile_top =
+        -kTilesetPreviewHalfHeight +
+        static_cast<float>(selected_row) * kAtlasTileHeight;
+
+    const float tile_right = tile_left + kAtlasTileWidth;
+    const float tile_bottom = tile_top + kAtlasTileHeight;
+
+    const float inner_left = tile_left + kSelectionOutlineWidth;
+    const float inner_top = tile_top + kSelectionOutlineHeight;
+    const float inner_right = tile_right - kSelectionOutlineWidth;
+    const float inner_bottom = tile_bottom - kSelectionOutlineHeight;
 
     return {{
         Vertex2D{
@@ -126,18 +183,34 @@ constexpr std::array<Vertex2D, 4> make_selected_tile_preview_vertices(
             1.0f, 1.0f, 1.0f,
             selected_region.left,
             selected_region.bottom
-        }
+        },
+        selection_outline_vertex(tile_left, tile_top),
+        selection_outline_vertex(tile_right, tile_top),
+        selection_outline_vertex(tile_right, tile_bottom),
+        selection_outline_vertex(tile_left, tile_bottom),
+        selection_outline_vertex(inner_left, inner_top),
+        selection_outline_vertex(inner_right, inner_top),
+        selection_outline_vertex(inner_right, inner_bottom),
+        selection_outline_vertex(inner_left, inner_bottom)
     }};
 }
 
 constexpr std::size_t kQuadVertexCount =
-    kTilesetPreviewVertices.size() + 4;
+    kTilesetPreviewVertices.size() + kTileSelectionVertexCount;
 
-constexpr std::array<std::uint16_t, 12> kQuadIndices{{
+constexpr std::array<std::uint16_t, 36> kQuadIndices{{
     0, 1, 2,
     2, 3, 0,
     4, 5, 6,
-    6, 7, 4
+    6, 7, 4,
+    8, 9, 13,
+    13, 12, 8,
+    9, 10, 14,
+    14, 13, 9,
+    10, 11, 15,
+    15, 14, 10,
+    11, 8, 12,
+    12, 15, 11
 }};
 
 constexpr VkDeviceSize kQuadVertexBufferSize =
@@ -224,7 +297,7 @@ Application::Application()
         sizeof(kTilesetPreviewVertices)
     );
 
-    upload_selected_tile_preview_vertices();
+    upload_tile_selection_vertices();
 
     quad_index_buffer_.upload(
         kQuadIndices.data(),
@@ -445,7 +518,7 @@ void Application::select_tile(
     selected_tile_column_ = column;
     selected_tile_row_ = row;
 
-    upload_selected_tile_preview_vertices();
+    upload_tile_selection_vertices();
 
     std::cout << "[Midnight] Selected tile: ("
               << selected_tile_column_
@@ -501,10 +574,10 @@ void Application::select_tile_at_window_position(
     select_tile(column, row);
 }
 
-void Application::upload_selected_tile_preview_vertices()
+void Application::upload_tile_selection_vertices()
 {
-    const std::array<Vertex2D, 4> vertices =
-        make_selected_tile_preview_vertices(
+    const std::array<Vertex2D, kTileSelectionVertexCount> vertices =
+        make_tile_selection_vertices(
             selected_tile_column_,
             selected_tile_row_
         );

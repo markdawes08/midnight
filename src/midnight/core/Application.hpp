@@ -37,7 +37,7 @@ private:
     void move_tile_selection(int column_delta, int row_delta);
     void select_tile(std::uint32_t column, std::uint32_t row);
     void select_tile_at_window_position(float x, float y);
-    void upload_selected_tile_preview_vertices();
+    void upload_tile_selection_vertices();
 
     SdlContext sdl_;
     Window window_;

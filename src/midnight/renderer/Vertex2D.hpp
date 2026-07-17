@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace midnight {
 
 struct Vertex2D final {
@@ -12,6 +14,8 @@ struct Vertex2D final {
 
     float texture_u = 0.0f;
     float texture_v = 0.0f;
+
+    std::uint32_t texture_enabled = 1;
 };
 
 }

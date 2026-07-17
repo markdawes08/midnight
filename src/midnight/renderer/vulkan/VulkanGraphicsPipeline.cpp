@@ -208,7 +208,7 @@ void VulkanGraphicsPipeline::create_graphics_pipeline()
     vertex_binding.stride = sizeof(Vertex2D);
     vertex_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 3> vertex_attributes{};
+    std::array<VkVertexInputAttributeDescription, 4> vertex_attributes{};
 
     vertex_attributes[0].binding = 0;
     vertex_attributes[0].location = 0;
@@ -224,6 +224,11 @@ void VulkanGraphicsPipeline::create_graphics_pipeline()
     vertex_attributes[2].location = 2;
     vertex_attributes[2].format = VK_FORMAT_R32G32_SFLOAT;
     vertex_attributes[2].offset = offsetof(Vertex2D, texture_u);
+
+    vertex_attributes[3].binding = 0;
+    vertex_attributes[3].location = 3;
+    vertex_attributes[3].format = VK_FORMAT_R32_UINT;
+    vertex_attributes[3].offset = offsetof(Vertex2D, texture_enabled);
 
     VkPipelineVertexInputStateCreateInfo vertex_input{};
     vertex_input.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
