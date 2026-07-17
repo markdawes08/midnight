@@ -1110,7 +1110,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Left-click or drag across the map to paint the selected region\n";
     std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
-    std::cout << "[Midnight] Press Ctrl+Z to undo the last map edit\n";
+    std::cout << "[Midnight] Press Ctrl+Z to undo and Ctrl+Shift+Z to redo map edits\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press M to toggle the map grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
@@ -1209,9 +1209,12 @@ void Application::poll_events()
 
                     case SDLK_Z:
                         if (!event.key.repeat &&
-                            (event.key.mod & SDL_KMOD_CTRL) != 0 &&
-                            (event.key.mod & SDL_KMOD_SHIFT) == 0) {
-                            undo_map_edit();
+                            (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                            if ((event.key.mod & SDL_KMOD_SHIFT) != 0) {
+                                redo_map_edit();
+                            } else {
+                                undo_map_edit();
+                            }
                         }
                         break;
 
@@ -1421,6 +1424,7 @@ void Application::finish_map_edit()
         map_undo_stack_.push_back(
             std::move(active_map_edit_before_)
         );
+        map_redo_stack_.clear();
     } else {
         active_map_edit_before_.clear();
     }
@@ -1441,6 +1445,7 @@ void Application::undo_map_edit()
 
     vulkan_device_.wait_idle();
 
+    map_redo_stack_.push_back(std::move(map_tiles_));
     map_tiles_ = std::move(map_undo_stack_.back());
     map_undo_stack_.pop_back();
 
@@ -1455,6 +1460,36 @@ void Application::undo_map_edit()
     }
 
     std::cout << "[Midnight] Undid map edit\n";
+}
+
+void Application::redo_map_edit()
+{
+    if (map_edit_active_) {
+        return;
+    }
+
+    if (map_redo_stack_.empty()) {
+        std::cout << "[Midnight] Nothing to redo\n";
+        return;
+    }
+
+    vulkan_device_.wait_idle();
+
+    map_undo_stack_.push_back(std::move(map_tiles_));
+    map_tiles_ = std::move(map_redo_stack_.back());
+    map_redo_stack_.pop_back();
+
+    for (std::uint32_t row = 0;
+         row < kMapCanvasRows;
+         ++row) {
+        for (std::uint32_t column = 0;
+             column < kMapCanvasColumns;
+             ++column) {
+            upload_map_tile_vertices(column, row);
+        }
+    }
+
+    std::cout << "[Midnight] Redid map edit\n";
 }
 
 bool Application::paint_map_selection(

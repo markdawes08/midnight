@@ -46,6 +46,7 @@ private:
     void begin_map_edit();
     void finish_map_edit();
     void undo_map_edit();
+    void redo_map_edit();
     [[nodiscard]] bool paint_map_selection(float x, float y);
     [[nodiscard]] bool erase_map_tile(float x, float y);
     void pick_map_tile(float x, float y);
@@ -104,6 +105,7 @@ private:
     std::vector<MapTile> map_tiles_;
     std::vector<MapTile> active_map_edit_before_;
     std::vector<std::vector<MapTile>> map_undo_stack_;
+    std::vector<std::vector<MapTile>> map_redo_stack_;
 
     std::uint32_t selected_tile_left_ = 0;
     std::uint32_t selected_tile_top_ = 0;
