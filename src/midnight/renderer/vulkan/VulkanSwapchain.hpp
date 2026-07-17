@@ -16,7 +16,8 @@ public:
     VulkanSwapchain(
         const Window& window,
         const VulkanDevice& device,
-        const VulkanSurface& surface
+        const VulkanSurface& surface,
+        VkSwapchainKHR old_swapchain = VK_NULL_HANDLE
     );
 
     ~VulkanSwapchain();
@@ -37,7 +38,10 @@ public:
     [[nodiscard]] std::uint32_t image_count() const noexcept;
 
 private:
-    void create_swapchain(const Window& window);
+    void create_swapchain(
+        const Window& window,
+        VkSwapchainKHR old_swapchain
+    );
     void create_image_views();
     void destroy_image_views() noexcept;
 

@@ -16,6 +16,7 @@
 #include "midnight/renderer/vulkan/VulkanTransferContext.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace midnight {
@@ -23,6 +24,7 @@ namespace midnight {
 class Application final {
 public:
     Application();
+    ~Application() noexcept;
 
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
@@ -33,6 +35,14 @@ public:
     int run();
 
 private:
+    struct SwapchainResources final {
+        std::unique_ptr<VulkanSwapchain> swapchain;
+        std::unique_ptr<VulkanRenderPass> render_pass;
+        std::unique_ptr<VulkanGraphicsPipeline> graphics_pipeline;
+        std::unique_ptr<VulkanTextureDescriptor> texture_descriptor;
+        std::unique_ptr<VulkanFrameRenderer> frame_renderer;
+    };
+
     struct MapTile final {
         std::uint32_t tileset_column = 0;
         std::uint32_t tileset_row = 0;
@@ -43,6 +53,16 @@ private:
 
     void print_startup_info() const;
     void poll_events();
+    [[nodiscard]] SwapchainResources create_swapchain_resources(
+        VkSwapchainKHR old_swapchain = VK_NULL_HANDLE
+    );
+    [[nodiscard]] bool recreate_swapchain_resources();
+    void request_swapchain_recreation(
+        bool wait_for_stable_size,
+        bool restart_settle_delay = false
+    );
+    void release_retired_swapchain_resources();
+    void wait_for_rendering_resources();
     void begin_map_edit();
     void finish_map_edit();
     void undo_map_edit();
@@ -94,15 +114,12 @@ private:
     VulkanSurface vulkan_surface_;
     VulkanDevice vulkan_device_;
     VulkanTransferContext vulkan_transfer_context_;
-    VulkanSwapchain vulkan_swapchain_;
-    VulkanRenderPass vulkan_render_pass_;
-    VulkanGraphicsPipeline vulkan_graphics_pipeline_;
     VulkanBuffer quad_vertex_buffer_;
     VulkanBuffer quad_index_buffer_;
     VulkanImage texture_image_;
     VulkanSampler texture_sampler_;
-    VulkanTextureDescriptor texture_descriptor_;
-    VulkanFrameRenderer vulkan_frame_renderer_;
+    SwapchainResources swapchain_resources_;
+    std::vector<SwapchainResources> retired_swapchain_resources_;
     std::vector<MapTile> map_tiles_;
     std::vector<MapTile> active_map_edit_before_;
     std::vector<std::vector<MapTile>> map_undo_stack_;
@@ -127,6 +144,12 @@ private:
     bool map_erase_dragging_ = false;
     bool map_edit_active_ = false;
     bool map_hover_visible_ = false;
+    bool swapchain_recreation_pending_ = false;
+    std::uint64_t swapchain_recreation_not_before_ticks_ = 0;
+    int swapchain_window_pixel_width_ = 0;
+    int swapchain_window_pixel_height_ = 0;
+    int pending_swapchain_pixel_width_ = 0;
+    int pending_swapchain_pixel_height_ = 0;
     bool running_ = true;
 };
 

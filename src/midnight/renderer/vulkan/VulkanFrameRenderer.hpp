@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -38,6 +39,8 @@ public:
     VulkanFrameRenderer& operator=(VulkanFrameRenderer&&) = delete;
 
     [[nodiscard]] bool draw_frame();
+    void wait_for_in_flight_frames();
+    [[nodiscard]] bool consume_present_completion_observed() noexcept;
 
 private:
     static constexpr std::size_t kMaxFramesInFlight = 2;
@@ -73,9 +76,12 @@ private:
     std::vector<VkSemaphore> image_available_semaphores_;
     std::vector<VkSemaphore> render_finished_semaphores_;
     std::vector<VkFence> in_flight_fences_;
-    std::vector<VkFence> image_in_flight_fences_;
+    std::vector<bool> image_has_been_presented_;
+    std::array<bool, kMaxFramesInFlight>
+        frame_reacquired_presented_image_{};
 
     std::size_t current_frame_ = 0;
+    bool present_completion_observed_ = false;
 };
 
 }

@@ -15,6 +15,11 @@
 #include <string>
 
 namespace midnight {
+namespace {
+
+constexpr std::uint64_t kHostWaitTimeoutNanoseconds = 16'000'000;
+
+}
 
 VulkanFrameRenderer::VulkanFrameRenderer(
     const VulkanDevice& device,
@@ -41,16 +46,16 @@ VulkanFrameRenderer::VulkanFrameRenderer(
     create_framebuffers();
     allocate_command_buffers();
     create_sync_objects();
+    image_has_been_presented_.resize(
+        swapchain_.image_count(),
+        false
+    );
 
     std::cout << "[Midnight] Vulkan frame renderer created\n";
 }
 
 VulkanFrameRenderer::~VulkanFrameRenderer()
 {
-    if (device_.handle() != VK_NULL_HANDLE) {
-        (void)vkDeviceWaitIdle(device_.handle());
-    }
-
     destroy_framebuffers();
     destroy_sync_objects();
 
@@ -64,27 +69,40 @@ bool VulkanFrameRenderer::draw_frame()
 {
     const VkFence frame_fence = in_flight_fences_[current_frame_];
 
-    throw_if_vk_failed(
-        vkWaitForFences(
-            device_.handle(),
-            1,
-            &frame_fence,
-            VK_TRUE,
-            std::numeric_limits<std::uint64_t>::max()
-        ),
-        "vkWaitForFences"
+    const VkResult frame_wait_result = vkWaitForFences(
+        device_.handle(),
+        1,
+        &frame_fence,
+        VK_TRUE,
+        kHostWaitTimeoutNanoseconds
     );
+
+    if (frame_wait_result == VK_TIMEOUT) {
+        return true;
+    }
+
+    throw_if_vk_failed(frame_wait_result, "vkWaitForFences");
+
+    if (frame_reacquired_presented_image_[current_frame_]) {
+        frame_reacquired_presented_image_[current_frame_] = false;
+        present_completion_observed_ = true;
+    }
 
     std::uint32_t image_index = 0;
 
     const VkResult acquire_result = vkAcquireNextImageKHR(
         device_.handle(),
         swapchain_.handle(),
-        std::numeric_limits<std::uint64_t>::max(),
+        kHostWaitTimeoutNanoseconds,
         image_available_semaphores_[current_frame_],
         VK_NULL_HANDLE,
         &image_index
     );
+
+    if (acquire_result == VK_TIMEOUT ||
+        acquire_result == VK_NOT_READY) {
+        return true;
+    }
 
     if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
         return false;
@@ -97,22 +115,10 @@ bool VulkanFrameRenderer::draw_frame()
         );
     }
 
-    if (image_in_flight_fences_[image_index] != VK_NULL_HANDLE) {
-        const VkFence image_fence = image_in_flight_fences_[image_index];
-
-        throw_if_vk_failed(
-            vkWaitForFences(
-                device_.handle(),
-                1,
-                &image_fence,
-                VK_TRUE,
-                std::numeric_limits<std::uint64_t>::max()
-            ),
-            "vkWaitForFences"
-        );
-    }
-
-    image_in_flight_fences_[image_index] = frame_fence;
+    bool swapchain_recreation_needed =
+        acquire_result == VK_SUBOPTIMAL_KHR;
+    const bool reacquired_presented_image =
+        image_has_been_presented_[image_index];
 
     throw_if_vk_failed(
         vkResetFences(device_.handle(), 1, &frame_fence),
@@ -137,7 +143,7 @@ bool VulkanFrameRenderer::draw_frame()
     };
 
     const VkSemaphore signal_semaphores[] = {
-        render_finished_semaphores_[current_frame_]
+        render_finished_semaphores_[image_index]
     };
 
     VkSubmitInfo submit_info{};
@@ -160,6 +166,9 @@ bool VulkanFrameRenderer::draw_frame()
         "vkQueueSubmit"
     );
 
+    frame_reacquired_presented_image_[current_frame_] =
+        reacquired_presented_image;
+
     const VkSwapchainKHR swapchains[] = {
         swapchain_.handle()
     };
@@ -178,12 +187,15 @@ bool VulkanFrameRenderer::draw_frame()
         &present_info
     );
 
-    if (present_result == VK_ERROR_OUT_OF_DATE_KHR ||
+    if (present_result == VK_SUCCESS ||
         present_result == VK_SUBOPTIMAL_KHR) {
-        return false;
+        image_has_been_presented_[image_index] = true;
     }
 
-    if (present_result != VK_SUCCESS) {
+    if (present_result == VK_ERROR_OUT_OF_DATE_KHR ||
+        present_result == VK_SUBOPTIMAL_KHR) {
+        swapchain_recreation_needed = true;
+    } else if (present_result != VK_SUCCESS) {
         throw std::runtime_error(
             "vkQueuePresentKHR failed: " + vk_result_to_string(present_result)
         );
@@ -191,7 +203,37 @@ bool VulkanFrameRenderer::draw_frame()
 
     current_frame_ = (current_frame_ + 1) % kMaxFramesInFlight;
 
-    return true;
+    return !swapchain_recreation_needed;
+}
+
+void VulkanFrameRenderer::wait_for_in_flight_frames()
+{
+    throw_if_vk_failed(
+        vkWaitForFences(
+            device_.handle(),
+            static_cast<std::uint32_t>(in_flight_fences_.size()),
+            in_flight_fences_.data(),
+            VK_TRUE,
+            std::numeric_limits<std::uint64_t>::max()
+        ),
+        "vkWaitForFences"
+    );
+
+    for (std::size_t frame_index = 0;
+         frame_index < frame_reacquired_presented_image_.size();
+         ++frame_index) {
+        if (frame_reacquired_presented_image_[frame_index]) {
+            frame_reacquired_presented_image_[frame_index] = false;
+            present_completion_observed_ = true;
+        }
+    }
+}
+
+bool VulkanFrameRenderer::consume_present_completion_observed() noexcept
+{
+    const bool completion_observed = present_completion_observed_;
+    present_completion_observed_ = false;
+    return completion_observed;
 }
 
 void VulkanFrameRenderer::create_command_pool()
@@ -285,13 +327,11 @@ void VulkanFrameRenderer::allocate_command_buffers()
 void VulkanFrameRenderer::create_sync_objects()
 {
     image_available_semaphores_.resize(kMaxFramesInFlight, VK_NULL_HANDLE);
-    render_finished_semaphores_.resize(kMaxFramesInFlight, VK_NULL_HANDLE);
-    in_flight_fences_.resize(kMaxFramesInFlight, VK_NULL_HANDLE);
-
-    image_in_flight_fences_.resize(
+    render_finished_semaphores_.resize(
         swapchain_.image_count(),
         VK_NULL_HANDLE
     );
+    in_flight_fences_.resize(kMaxFramesInFlight, VK_NULL_HANDLE);
 
     VkSemaphoreCreateInfo semaphore_info{};
     semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -300,6 +340,20 @@ void VulkanFrameRenderer::create_sync_objects()
     fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
+    for (std::size_t index = 0;
+         index < render_finished_semaphores_.size();
+         ++index) {
+        throw_if_vk_failed(
+            vkCreateSemaphore(
+                device_.handle(),
+                &semaphore_info,
+                nullptr,
+                &render_finished_semaphores_[index]
+            ),
+            "vkCreateSemaphore"
+        );
+    }
+
     for (std::size_t index = 0; index < kMaxFramesInFlight; ++index) {
         throw_if_vk_failed(
             vkCreateSemaphore(
@@ -307,16 +361,6 @@ void VulkanFrameRenderer::create_sync_objects()
                 &semaphore_info,
                 nullptr,
                 &image_available_semaphores_[index]
-            ),
-            "vkCreateSemaphore"
-        );
-
-        throw_if_vk_failed(
-            vkCreateSemaphore(
-                device_.handle(),
-                &semaphore_info,
-                nullptr,
-                &render_finished_semaphores_[index]
             ),
             "vkCreateSemaphore"
         );
@@ -358,7 +402,6 @@ void VulkanFrameRenderer::destroy_sync_objects() noexcept
     in_flight_fences_.clear();
     render_finished_semaphores_.clear();
     image_available_semaphores_.clear();
-    image_in_flight_fences_.clear();
 }
 
 void VulkanFrameRenderer::record_command_buffer(

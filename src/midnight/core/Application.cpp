@@ -36,6 +36,7 @@ constexpr std::uint32_t kSelectedRegionPreviewMaxHeight = 384;
 constexpr std::uint32_t kMapCanvasColumns = 8;
 constexpr std::uint32_t kMapCanvasRows = 6;
 constexpr std::uint32_t kMapCanvasScale = 2;
+constexpr std::uint64_t kSwapchainResizeSettleMilliseconds = 250;
 constexpr std::size_t kMapCanvasCellCount =
     static_cast<std::size_t>(kMapCanvasColumns) *
     static_cast<std::size_t>(kMapCanvasRows);
@@ -914,13 +915,6 @@ Application::Application()
       vulkan_surface_(window_, vulkan_instance_),
       vulkan_device_(vulkan_instance_, vulkan_surface_),
       vulkan_transfer_context_(vulkan_device_),
-      vulkan_swapchain_(window_, vulkan_device_, vulkan_surface_),
-      vulkan_render_pass_(vulkan_device_, vulkan_swapchain_),
-      vulkan_graphics_pipeline_(
-          vulkan_device_,
-          vulkan_swapchain_,
-          vulkan_render_pass_
-      ),
       quad_vertex_buffer_(
           vulkan_device_,
           kQuadVertexBufferSize,
@@ -952,29 +946,16 @@ Application::Application()
           vulkan_device_,
           VulkanSampler::CreateInfo{}
       ),
-      texture_descriptor_(
-          vulkan_device_,
-          vulkan_graphics_pipeline_.descriptor_set_layout(),
-          texture_image_,
-          texture_sampler_
-      ),
-      vulkan_frame_renderer_(
-          vulkan_device_,
-          vulkan_swapchain_,
-          vulkan_render_pass_,
-          vulkan_graphics_pipeline_,
-          texture_descriptor_,
-          quad_vertex_buffer_,
-          quad_index_buffer_,
-          static_cast<std::uint32_t>(kQuadIndices.size()),
-          VK_INDEX_TYPE_UINT16
-      ),
       map_tiles_(kMapCanvasCellCount),
       selected_tile_left_(kInitialSelectedTileColumn),
       selected_tile_top_(kInitialSelectedTileRow),
       selected_tile_right_(kInitialSelectedTileColumn),
       selected_tile_bottom_(kInitialSelectedTileRow)
 {
+    swapchain_resources_ = create_swapchain_resources();
+    swapchain_window_pixel_width_ = window_.pixel_width();
+    swapchain_window_pixel_height_ = window_.pixel_height();
+
     quad_vertex_buffer_.upload(
         kTilesetPreviewVertices.data(),
         sizeof(kTilesetPreviewVertices)
@@ -1050,6 +1031,17 @@ Application::Application()
     );
 }
 
+Application::~Application() noexcept
+{
+    try {
+        vulkan_device_.wait_idle();
+    } catch (const std::exception& error) {
+        std::cerr << "[Midnight] Vulkan shutdown wait failed: "
+                  << error.what()
+                  << '\n';
+    }
+}
+
 int Application::run()
 {
     print_startup_info();
@@ -1061,15 +1053,183 @@ int Application::run()
             break;
         }
 
-        const bool frame_rendered = vulkan_frame_renderer_.draw_frame();
+        window_.refresh_size();
 
-        if (!frame_rendered) {
-            std::cout << "[Midnight] Swapchain needs recreation. Exiting for this increment.\n";
-            running_ = false;
+        if (window_.pixel_width() !=
+                swapchain_window_pixel_width_ ||
+            window_.pixel_height() !=
+                swapchain_window_pixel_height_) {
+            request_swapchain_recreation(true);
+        }
+
+        if (swapchain_recreation_pending_) {
+            if (SDL_GetTicks() <
+                swapchain_recreation_not_before_ticks_) {
+                SDL_Delay(16);
+                continue;
+            }
+
+            if (!recreate_swapchain_resources()) {
+                SDL_Delay(16);
+                continue;
+            }
+        }
+
+        const bool swapchain_ready =
+            swapchain_resources_.frame_renderer->draw_frame();
+
+        if (swapchain_resources_.frame_renderer
+                ->consume_present_completion_observed()) {
+            release_retired_swapchain_resources();
+        }
+
+        if (!swapchain_ready) {
+            request_swapchain_recreation(false);
         }
     }
 
     return 0;
+}
+
+Application::SwapchainResources
+Application::create_swapchain_resources(
+    const VkSwapchainKHR old_swapchain
+)
+{
+    SwapchainResources resources{};
+
+    resources.swapchain = std::make_unique<VulkanSwapchain>(
+        window_,
+        vulkan_device_,
+        vulkan_surface_,
+        old_swapchain
+    );
+    resources.render_pass = std::make_unique<VulkanRenderPass>(
+        vulkan_device_,
+        *resources.swapchain
+    );
+    resources.graphics_pipeline =
+        std::make_unique<VulkanGraphicsPipeline>(
+            vulkan_device_,
+            *resources.swapchain,
+            *resources.render_pass
+        );
+    resources.texture_descriptor =
+        std::make_unique<VulkanTextureDescriptor>(
+            vulkan_device_,
+            resources.graphics_pipeline->descriptor_set_layout(),
+            texture_image_,
+            texture_sampler_
+        );
+    resources.frame_renderer =
+        std::make_unique<VulkanFrameRenderer>(
+            vulkan_device_,
+            *resources.swapchain,
+            *resources.render_pass,
+            *resources.graphics_pipeline,
+            *resources.texture_descriptor,
+            quad_vertex_buffer_,
+            quad_index_buffer_,
+            static_cast<std::uint32_t>(kQuadIndices.size()),
+            VK_INDEX_TYPE_UINT16
+        );
+
+    return resources;
+}
+
+bool Application::recreate_swapchain_resources()
+{
+    window_.refresh_size();
+
+    const SDL_WindowFlags window_flags =
+        SDL_GetWindowFlags(window_.sdl_handle());
+    const bool window_unavailable =
+        (window_flags &
+            (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED)) != 0;
+
+    if (window_unavailable ||
+        window_.pixel_width() <= 0 ||
+        window_.pixel_height() <= 0) {
+        return false;
+    }
+
+    const VkSwapchainKHR old_swapchain =
+        swapchain_resources_.swapchain->handle();
+    SwapchainResources replacement =
+        create_swapchain_resources(old_swapchain);
+
+    retired_swapchain_resources_.push_back(
+        std::move(swapchain_resources_)
+    );
+    swapchain_resources_ = std::move(replacement);
+
+    swapchain_window_pixel_width_ = window_.pixel_width();
+    swapchain_window_pixel_height_ = window_.pixel_height();
+    swapchain_recreation_pending_ = false;
+
+    std::cout << "[Midnight] Vulkan swapchain resources recreated\n";
+
+    return true;
+}
+
+void Application::request_swapchain_recreation(
+    const bool wait_for_stable_size,
+    const bool restart_settle_delay
+)
+{
+    const bool request_was_pending =
+        swapchain_recreation_pending_;
+    const bool requested_size_changed =
+        window_.pixel_width() != pending_swapchain_pixel_width_ ||
+        window_.pixel_height() != pending_swapchain_pixel_height_;
+
+    swapchain_recreation_pending_ = true;
+
+    if (wait_for_stable_size &&
+        (!request_was_pending ||
+         requested_size_changed ||
+         restart_settle_delay)) {
+        pending_swapchain_pixel_width_ = window_.pixel_width();
+        pending_swapchain_pixel_height_ = window_.pixel_height();
+        swapchain_recreation_not_before_ticks_ =
+            SDL_GetTicks() +
+            kSwapchainResizeSettleMilliseconds;
+    } else if (!wait_for_stable_size &&
+               !request_was_pending) {
+        pending_swapchain_pixel_width_ = window_.pixel_width();
+        pending_swapchain_pixel_height_ = window_.pixel_height();
+        swapchain_recreation_not_before_ticks_ = SDL_GetTicks();
+    }
+}
+
+void Application::release_retired_swapchain_resources()
+{
+    if (retired_swapchain_resources_.empty()) {
+        return;
+    }
+
+    const std::size_t released_count =
+        retired_swapchain_resources_.size();
+    retired_swapchain_resources_.clear();
+
+    std::cout << "[Midnight] Retired Vulkan swapchain resources released: "
+              << released_count
+              << '\n';
+}
+
+void Application::wait_for_rendering_resources()
+{
+    swapchain_resources_.frame_renderer->wait_for_in_flight_frames();
+
+    for (SwapchainResources& resources :
+         retired_swapchain_resources_) {
+        resources.frame_renderer->wait_for_in_flight_frames();
+    }
+
+    if (swapchain_resources_.frame_renderer
+            ->consume_present_completion_observed()) {
+        release_retired_swapchain_resources();
+    }
 }
 
 void Application::print_startup_info() const
@@ -1166,9 +1326,23 @@ void Application::poll_events()
         map_hover_update_pending = true;
     };
 
+    const auto finish_pointer_gestures = [&]() {
+        if (tile_selection_dragging_) {
+            flush_pending_tile_selection_drag();
+            tile_selection_dragging_ = false;
+            print_tile_selection();
+        }
+
+        finish_map_edit();
+        map_paint_dragging_ = false;
+        map_erase_dragging_ = false;
+        tile_selection_drag_update_pending = false;
+    };
+
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
             case SDL_EVENT_QUIT:
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                 running_ = false;
                 break;
 
@@ -1360,35 +1534,89 @@ void Application::poll_events()
                 }
                 break;
 
-            case SDL_EVENT_WINDOW_RESIZED: {
-                flush_pending_tile_selection_drag();
+            case SDL_EVENT_WINDOW_RESIZED:
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+            case SDL_EVENT_WINDOW_MAXIMIZED:
+            case SDL_EVENT_WINDOW_RESTORED:
+            case SDL_EVENT_WINDOW_DISPLAY_CHANGED:
+            case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+            case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+            case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN: {
+                finish_pointer_gestures();
                 map_hover_update_pending = false;
+
+                const int old_width = window_.width();
+                const int old_height = window_.height();
+                const int old_pixel_width = window_.pixel_width();
+                const int old_pixel_height = window_.pixel_height();
+
                 window_.refresh_size();
-                std::cout << "[Midnight] Window resized: "
-                          << window_.width()
-                          << "x"
-                          << window_.height()
-                          << " logical, "
-                          << window_.pixel_width()
-                          << "x"
-                          << window_.pixel_height()
-                          << " pixels"
-                          << '\n';
+
+                const bool pixel_size_changed =
+                    window_.pixel_width() !=
+                        swapchain_window_pixel_width_ ||
+                    window_.pixel_height() !=
+                        swapchain_window_pixel_height_;
+                const bool pending_size_changed =
+                    swapchain_recreation_pending_ &&
+                    (window_.pixel_width() !=
+                         pending_swapchain_pixel_width_ ||
+                     window_.pixel_height() !=
+                         pending_swapchain_pixel_height_);
+                const bool window_state_changed =
+                    event.type ==
+                        SDL_EVENT_WINDOW_MAXIMIZED ||
+                    event.type ==
+                        SDL_EVENT_WINDOW_RESTORED ||
+                    event.type ==
+                        SDL_EVENT_WINDOW_DISPLAY_CHANGED ||
+                    event.type ==
+                        SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED ||
+                    event.type ==
+                        SDL_EVENT_WINDOW_ENTER_FULLSCREEN ||
+                    event.type ==
+                        SDL_EVENT_WINDOW_LEAVE_FULLSCREEN;
+
+                if (pixel_size_changed ||
+                    pending_size_changed ||
+                    window_state_changed) {
+                    request_swapchain_recreation(
+                        true,
+                        window_state_changed
+                    );
+                }
+
+                if (old_width != window_.width() ||
+                    old_height != window_.height() ||
+                    old_pixel_width != window_.pixel_width() ||
+                    old_pixel_height != window_.pixel_height()) {
+                    std::cout << "[Midnight] Window resized: "
+                              << window_.width()
+                              << "x"
+                              << window_.height()
+                              << " logical, "
+                              << window_.pixel_width()
+                              << "x"
+                              << window_.pixel_height()
+                              << " pixels"
+                              << '\n';
+                }
 
                 queue_current_map_hover();
                 break;
             }
 
-            case SDL_EVENT_WINDOW_FOCUS_LOST:
-                if (tile_selection_dragging_) {
-                    flush_pending_tile_selection_drag();
-                    tile_selection_dragging_ = false;
-                    print_tile_selection();
-                }
+            case SDL_EVENT_WINDOW_MINIMIZED:
+            case SDL_EVENT_WINDOW_HIDDEN:
+                finish_pointer_gestures();
+                window_.refresh_size();
+                request_swapchain_recreation(true, true);
+                map_hover_update_pending = false;
+                clear_map_hover();
+                break;
 
-                finish_map_edit();
-                map_paint_dragging_ = false;
-                map_erase_dragging_ = false;
+            case SDL_EVENT_WINDOW_FOCUS_LOST:
+                finish_pointer_gestures();
                 map_hover_update_pending = false;
                 clear_map_hover();
                 break;
@@ -1451,7 +1679,7 @@ void Application::undo_map_edit()
         return;
     }
 
-    vulkan_device_.wait_idle();
+    wait_for_rendering_resources();
 
     map_redo_stack_.push_back(std::move(map_tiles_));
     map_tiles_ = std::move(map_undo_stack_.back());
@@ -1481,7 +1709,7 @@ void Application::redo_map_edit()
         return;
     }
 
-    vulkan_device_.wait_idle();
+    wait_for_rendering_resources();
 
     map_undo_stack_.push_back(std::move(map_tiles_));
     map_tiles_ = std::move(map_redo_stack_.back());
@@ -1593,7 +1821,7 @@ void Application::flood_fill_map()
     }
 
     begin_map_edit();
-    vulkan_device_.wait_idle();
+    wait_for_rendering_resources();
 
     for (const std::size_t cell_index : filled_cells) {
         const std::uint32_t column =
@@ -1703,7 +1931,7 @@ bool Application::paint_map_selection(
         return true;
     }
 
-    vulkan_device_.wait_idle();
+    wait_for_rendering_resources();
 
     for (std::uint32_t row_offset = 0;
          row_offset < painted_row_count;
@@ -1799,7 +2027,7 @@ bool Application::erase_map_tile(
         return true;
     }
 
-    vulkan_device_.wait_idle();
+    wait_for_rendering_resources();
 
     map_tile = MapTile{};
     upload_map_tile_vertices(column, row);
@@ -1909,7 +2137,7 @@ void Application::update_map_hover(
         return;
     }
 
-    vulkan_device_.wait_idle();
+    wait_for_rendering_resources();
 
     hovered_map_column_ = column;
     hovered_map_row_ = row;
@@ -1924,7 +2152,7 @@ void Application::clear_map_hover()
         return;
     }
 
-    vulkan_device_.wait_idle();
+    wait_for_rendering_resources();
 
     map_hover_visible_ = false;
     upload_map_hover_vertices();
@@ -1995,7 +2223,7 @@ void Application::upload_map_hover_vertices()
 
 void Application::toggle_tileset_grid()
 {
-    vulkan_device_.wait_idle();
+    wait_for_rendering_resources();
 
     tileset_grid_visible_ = !tileset_grid_visible_;
     upload_tileset_grid_vertices();
@@ -2021,7 +2249,7 @@ void Application::upload_tileset_grid_vertices()
 
 void Application::toggle_map_grid()
 {
-    vulkan_device_.wait_idle();
+    wait_for_rendering_resources();
 
     map_grid_visible_ = !map_grid_visible_;
     upload_map_grid_vertices();
@@ -2231,7 +2459,7 @@ bool Application::set_tile_selection(
         return false;
     }
 
-    vulkan_device_.wait_idle();
+    wait_for_rendering_resources();
 
     selected_tile_left_ = left;
     selected_tile_top_ = top;

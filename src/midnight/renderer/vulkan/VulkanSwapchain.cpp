@@ -201,12 +201,13 @@ VkCompositeAlphaFlagBitsKHR choose_composite_alpha(
 VulkanSwapchain::VulkanSwapchain(
     const Window& window,
     const VulkanDevice& device,
-    const VulkanSurface& surface
+    const VulkanSurface& surface,
+    const VkSwapchainKHR old_swapchain
 )
     : device_(device),
       surface_(surface)
 {
-    create_swapchain(window);
+    create_swapchain(window, old_swapchain);
     create_image_views();
 }
 
@@ -250,7 +251,10 @@ std::uint32_t VulkanSwapchain::image_count() const noexcept
     return static_cast<std::uint32_t>(images_.size());
 }
 
-void VulkanSwapchain::create_swapchain(const Window& window)
+void VulkanSwapchain::create_swapchain(
+    const Window& window,
+    const VkSwapchainKHR old_swapchain
+)
 {
     const SwapchainSupportDetails support = query_swapchain_support(
         device_.physical_device(),
@@ -280,7 +284,7 @@ void VulkanSwapchain::create_swapchain(const Window& window)
     create_info.compositeAlpha = choose_composite_alpha(support.capabilities);
     create_info.presentMode = present_mode;
     create_info.clipped = VK_TRUE;
-    create_info.oldSwapchain = VK_NULL_HANDLE;
+    create_info.oldSwapchain = old_swapchain;
 
     if (device_.graphics_queue_family_index() != device_.present_queue_family_index()) {
         create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
