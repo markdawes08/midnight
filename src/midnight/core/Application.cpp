@@ -207,6 +207,10 @@ constexpr std::uint32_t kMapHoverOutlineThickness = 2;
 constexpr float kMapHoverRed = 0.10f;
 constexpr float kMapHoverGreen = 0.85f;
 constexpr float kMapHoverBlue = 1.0f;
+constexpr std::uint32_t kMapAreaSelectionOutlineThickness = 3;
+constexpr float kMapAreaSelectionRed = 1.0f;
+constexpr float kMapAreaSelectionGreen = 0.30f;
+constexpr float kMapAreaSelectionBlue = 0.75f;
 
 constexpr float kGridLineWidth =
     (2.0f * static_cast<float>(kGridLineThickness)) /
@@ -222,6 +226,20 @@ constexpr float kMapHoverOutlineWidth =
 
 constexpr float kMapHoverOutlineHeight =
     (2.0f * static_cast<float>(kMapHoverOutlineThickness)) /
+    static_cast<float>(kInitialWindowHeight);
+
+constexpr float kMapAreaSelectionOutlineWidth =
+    (
+        2.0f *
+        static_cast<float>(kMapAreaSelectionOutlineThickness)
+    ) /
+    static_cast<float>(kInitialWindowWidth);
+
+constexpr float kMapAreaSelectionOutlineHeight =
+    (
+        2.0f *
+        static_cast<float>(kMapAreaSelectionOutlineThickness)
+    ) /
     static_cast<float>(kInitialWindowHeight);
 
 constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
@@ -276,6 +294,20 @@ constexpr Vertex2D map_hover_vertex(
         kMapHoverRed,
         kMapHoverGreen,
         kMapHoverBlue
+    );
+}
+
+constexpr Vertex2D map_area_selection_vertex(
+    const float position_x,
+    const float position_y
+)
+{
+    return solid_color_vertex(
+        position_x,
+        position_y,
+        kMapAreaSelectionRed,
+        kMapAreaSelectionGreen,
+        kMapAreaSelectionBlue
     );
 }
 
@@ -617,6 +649,58 @@ constexpr MapHoverVertices make_map_hover_vertices(
 
 constexpr MapHoverVertices kHiddenMapHoverVertices{};
 
+constexpr std::size_t kMapAreaSelectionVertexCount = 8;
+
+using MapAreaSelectionVertices =
+    std::array<Vertex2D, kMapAreaSelectionVertexCount>;
+
+constexpr MapAreaSelectionVertices
+make_map_area_selection_vertices(
+    const std::uint32_t left_column,
+    const std::uint32_t top_row,
+    const std::uint32_t right_column,
+    const std::uint32_t bottom_row
+)
+{
+    const float left =
+        kMapCanvasLeft +
+        static_cast<float>(left_column) * kMapCanvasCellWidth;
+    const float top =
+        kMapCanvasTop +
+        static_cast<float>(top_row) * kMapCanvasCellHeight;
+    const float right =
+        kMapCanvasLeft +
+        static_cast<float>(right_column + 1) *
+            kMapCanvasCellWidth;
+    const float bottom =
+        kMapCanvasTop +
+        static_cast<float>(bottom_row + 1) *
+            kMapCanvasCellHeight;
+
+    const float inner_left =
+        left + kMapAreaSelectionOutlineWidth;
+    const float inner_top =
+        top + kMapAreaSelectionOutlineHeight;
+    const float inner_right =
+        right - kMapAreaSelectionOutlineWidth;
+    const float inner_bottom =
+        bottom - kMapAreaSelectionOutlineHeight;
+
+    return {{
+        map_area_selection_vertex(left, top),
+        map_area_selection_vertex(right, top),
+        map_area_selection_vertex(right, bottom),
+        map_area_selection_vertex(left, bottom),
+        map_area_selection_vertex(inner_left, inner_top),
+        map_area_selection_vertex(inner_right, inner_top),
+        map_area_selection_vertex(inner_right, inner_bottom),
+        map_area_selection_vertex(inner_left, inner_bottom)
+    }};
+}
+
+constexpr MapAreaSelectionVertices
+    kHiddenMapAreaSelectionVertices{};
+
 constexpr std::size_t kTileSelectionVertexCount = 12;
 
 constexpr std::uint32_t selected_region_preview_scale(
@@ -753,7 +837,8 @@ constexpr std::size_t kQuadVertexCount =
     kMapCanvasVertices.size() +
     kTileSelectionVertexCount +
     kMapHoverVertexCount +
-    kMapTileVertexCount;
+    kMapTileVertexCount +
+    kMapAreaSelectionVertexCount;
 
 constexpr std::size_t kTilesetGridVertexByteOffset =
     sizeof(kTilesetPreviewVertices);
@@ -779,6 +864,10 @@ constexpr std::size_t kMapTileVertexByteOffset =
     kMapHoverVertexByteOffset +
     sizeof(Vertex2D) * kMapHoverVertexCount;
 
+constexpr std::size_t kMapAreaSelectionVertexByteOffset =
+    kMapTileVertexByteOffset +
+    sizeof(Vertex2D) * kMapTileVertexCount;
+
 constexpr std::size_t kQuadIndexCount =
     (
         1 +
@@ -786,6 +875,7 @@ constexpr std::size_t kQuadIndexCount =
         kMapCanvasQuadCount +
         kMapCanvasCellCount +
         1 +
+        4 +
         4 +
         4
     ) * 6;
@@ -928,6 +1018,16 @@ constexpr QuadIndices make_quad_indices()
         selection_first_vertex + 4
     );
 
+    const std::uint16_t map_area_selection_first_vertex =
+        map_tile_first_vertex +
+        static_cast<std::uint16_t>(kMapTileVertexCount);
+
+    append_outline_indices(
+        indices,
+        next_index,
+        map_area_selection_first_vertex
+    );
+
     const std::uint16_t map_hover_first_vertex =
         selection_first_vertex +
         static_cast<std::uint16_t>(kTileSelectionVertexCount);
@@ -1026,6 +1126,8 @@ Application::Application()
         sizeof(kEmptyMapTileVertices),
         kMapTileVertexByteOffset
     );
+
+    upload_map_area_selection_vertices();
 
     quad_index_buffer_.upload(
         kQuadIndices.data(),
@@ -1318,6 +1420,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Move the cursor across the map to highlight cells\n";
     std::cout << "[Midnight] Left-click or drag across the map to paint the selected region\n";
     std::cout << "[Midnight] Hold Shift and left-drag to paint a filled rectangle\n";
+    std::cout << "[Midnight] Hold Ctrl and left-drag to select a rectangular map area\n";
     std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
     std::cout << "[Midnight] Press F over the map to flood-fill with a 1x1 selection\n";
@@ -1383,6 +1486,7 @@ void Application::poll_events()
             print_tile_selection();
         }
 
+        finish_map_area_selection_drag();
         finish_map_rectangle_paint();
         finish_map_edit();
         map_paint_dragging_ = false;
@@ -1466,10 +1570,22 @@ void Application::poll_events()
                     flush_pending_tile_selection_drag();
                     map_paint_dragging_ = false;
                     map_rectangle_dragging_ = false;
+                    map_area_selection_dragging_ = false;
+                    const SDL_Keymod modifiers =
+                        SDL_GetModState();
+                    const bool area_selection_requested =
+                        (modifiers & SDL_KMOD_CTRL) != 0;
                     const bool rectangle_requested =
-                        (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
+                        !area_selection_requested &&
+                        (modifiers & SDL_KMOD_SHIFT) != 0;
 
-                    if (rectangle_requested) {
+                    if (area_selection_requested) {
+                        map_area_selection_dragging_ =
+                            begin_map_area_selection_drag(
+                                event.button.x,
+                                event.button.y
+                            );
+                    } else if (rectangle_requested) {
                         map_rectangle_dragging_ =
                             begin_map_rectangle_paint(
                                 event.button.x,
@@ -1484,7 +1600,8 @@ void Application::poll_events()
                     }
 
                     if (!map_paint_dragging_ &&
-                        !map_rectangle_dragging_) {
+                        !map_rectangle_dragging_ &&
+                        !map_area_selection_dragging_) {
                         finish_map_edit();
                         begin_tile_selection_drag(
                             event.button.x,
@@ -1494,6 +1611,7 @@ void Application::poll_events()
                 } else if (event.button.button == SDL_BUTTON_RIGHT &&
                            !map_paint_dragging_ &&
                            !map_rectangle_dragging_ &&
+                           !map_area_selection_dragging_ &&
                            !tile_selection_dragging_) {
                     map_erase_dragging_ = false;
                     begin_map_edit();
@@ -1508,6 +1626,7 @@ void Application::poll_events()
                 } else if (event.button.button == SDL_BUTTON_MIDDLE &&
                            !map_paint_dragging_ &&
                            !map_rectangle_dragging_ &&
+                           !map_area_selection_dragging_ &&
                            !map_erase_dragging_ &&
                            !tile_selection_dragging_) {
                     pick_map_tile(
@@ -1542,6 +1661,21 @@ void Application::poll_events()
                             event.motion.y
                         );
                         finish_map_rectangle_paint();
+                    }
+                }
+
+                if (map_area_selection_dragging_) {
+                    if ((event.motion.state & SDL_BUTTON_LMASK) != 0) {
+                        update_map_area_selection_drag(
+                            event.motion.x,
+                            event.motion.y
+                        );
+                    } else {
+                        update_map_area_selection_drag(
+                            event.motion.x,
+                            event.motion.y
+                        );
+                        finish_map_area_selection_drag();
                     }
                 }
 
@@ -1582,7 +1716,13 @@ void Application::poll_events()
                 map_hover_update_pending = true;
 
                 if (event.button.button == SDL_BUTTON_LEFT) {
-                    if (map_rectangle_dragging_) {
+                    if (map_area_selection_dragging_) {
+                        update_map_area_selection_drag(
+                            event.button.x,
+                            event.button.y
+                        );
+                        finish_map_area_selection_drag();
+                    } else if (map_rectangle_dragging_) {
                         update_map_rectangle_paint(
                             event.button.x,
                             event.button.y
@@ -1821,6 +1961,7 @@ void Application::flood_fill_map()
         tile_selection_dragging_ ||
         map_paint_dragging_ ||
         map_rectangle_dragging_ ||
+        map_area_selection_dragging_ ||
         map_erase_dragging_ ||
         map_edit_active_) {
         return;
@@ -2140,6 +2281,125 @@ void Application::finish_map_rectangle_paint()
               << "x"
               << selected_row_count
               << " atlas selection\n";
+}
+
+bool Application::begin_map_area_selection_drag(
+    const float x,
+    const float y
+)
+{
+    std::uint32_t column = 0;
+    std::uint32_t row = 0;
+
+    if (!window_position_to_map_cell(
+            x,
+            y,
+            column,
+            row
+        )) {
+        return false;
+    }
+
+    wait_for_rendering_resources();
+
+    map_area_selection_anchor_column_ = column;
+    map_area_selection_anchor_row_ = row;
+    map_area_selection_left_ = column;
+    map_area_selection_top_ = row;
+    map_area_selection_right_ = column;
+    map_area_selection_bottom_ = row;
+    map_area_selection_visible_ = true;
+    map_area_selection_dragging_ = true;
+
+    upload_map_area_selection_vertices();
+    return true;
+}
+
+void Application::update_map_area_selection_drag(
+    const float x,
+    const float y
+)
+{
+    if (!map_area_selection_dragging_) {
+        return;
+    }
+
+    std::uint32_t column = 0;
+    std::uint32_t row = 0;
+
+    if (!window_position_to_map_cell(
+            x,
+            y,
+            column,
+            row,
+            true
+        )) {
+        return;
+    }
+
+    const std::uint32_t left = std::min(
+        map_area_selection_anchor_column_,
+        column
+    );
+    const std::uint32_t top = std::min(
+        map_area_selection_anchor_row_,
+        row
+    );
+    const std::uint32_t right = std::max(
+        map_area_selection_anchor_column_,
+        column
+    );
+    const std::uint32_t bottom = std::max(
+        map_area_selection_anchor_row_,
+        row
+    );
+
+    if (left == map_area_selection_left_ &&
+        top == map_area_selection_top_ &&
+        right == map_area_selection_right_ &&
+        bottom == map_area_selection_bottom_) {
+        return;
+    }
+
+    wait_for_rendering_resources();
+
+    map_area_selection_left_ = left;
+    map_area_selection_top_ = top;
+    map_area_selection_right_ = right;
+    map_area_selection_bottom_ = bottom;
+
+    upload_map_area_selection_vertices();
+}
+
+void Application::finish_map_area_selection_drag()
+{
+    if (!map_area_selection_dragging_) {
+        return;
+    }
+
+    map_area_selection_dragging_ = false;
+    const std::uint32_t selected_column_count =
+        map_area_selection_right_ -
+        map_area_selection_left_ +
+        1;
+    const std::uint32_t selected_row_count =
+        map_area_selection_bottom_ -
+        map_area_selection_top_ +
+        1;
+
+    std::cout << "[Midnight] Selected map area from cell ("
+              << map_area_selection_left_
+              << ", "
+              << map_area_selection_top_
+              << ") to ("
+              << map_area_selection_right_
+              << ", "
+              << map_area_selection_bottom_
+              << "), "
+              << selected_column_count
+              << "x"
+              << selected_row_count
+              << " cells\n";
 }
 
 bool Application::paint_map_selection(
@@ -2522,6 +2782,25 @@ void Application::upload_map_hover_vertices()
         vertices.data(),
         sizeof(vertices),
         kMapHoverVertexByteOffset
+    );
+}
+
+void Application::upload_map_area_selection_vertices()
+{
+    const MapAreaSelectionVertices vertices =
+        map_area_selection_visible_
+            ? make_map_area_selection_vertices(
+                  map_area_selection_left_,
+                  map_area_selection_top_,
+                  map_area_selection_right_,
+                  map_area_selection_bottom_
+              )
+            : kHiddenMapAreaSelectionVertices;
+
+    quad_vertex_buffer_.upload(
+        vertices.data(),
+        sizeof(vertices),
+        kMapAreaSelectionVertexByteOffset
     );
 }
 
