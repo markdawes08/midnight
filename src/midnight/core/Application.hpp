@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace midnight {
@@ -51,6 +52,21 @@ private:
         bool operator==(const MapTile&) const = default;
     };
 
+    struct MapAreaSelectionState final {
+        std::uint32_t left = 0;
+        std::uint32_t top = 0;
+        std::uint32_t right = 0;
+        std::uint32_t bottom = 0;
+        bool visible = false;
+
+        bool operator==(const MapAreaSelectionState&) const = default;
+    };
+
+    struct MapEditSnapshot final {
+        std::vector<MapTile> tiles;
+        std::optional<MapAreaSelectionState> area_selection;
+    };
+
     void print_startup_info() const;
     void poll_events();
     [[nodiscard]] SwapchainResources create_swapchain_resources(
@@ -63,12 +79,18 @@ private:
     );
     void release_retired_swapchain_resources();
     void wait_for_rendering_resources();
-    void begin_map_edit();
+    void begin_map_edit(bool include_area_selection = false);
     void finish_map_edit();
     void undo_map_edit();
     void redo_map_edit();
+    [[nodiscard]] MapAreaSelectionState
+        capture_map_area_selection_state() const;
+    void apply_map_area_selection_state(
+        const MapAreaSelectionState& state
+    );
     void flood_fill_map();
     void delete_selected_map_area();
+    void move_selected_map_area(int column_delta, int row_delta);
     [[nodiscard]] bool begin_map_rectangle_paint(float x, float y);
     void update_map_rectangle_paint(float x, float y);
     void apply_map_rectangle_paint();
@@ -132,8 +154,10 @@ private:
     std::vector<SwapchainResources> retired_swapchain_resources_;
     std::vector<MapTile> map_tiles_;
     std::vector<MapTile> active_map_edit_before_;
-    std::vector<std::vector<MapTile>> map_undo_stack_;
-    std::vector<std::vector<MapTile>> map_redo_stack_;
+    std::optional<MapAreaSelectionState>
+        active_map_area_selection_before_;
+    std::vector<MapEditSnapshot> map_undo_stack_;
+    std::vector<MapEditSnapshot> map_redo_stack_;
 
     std::uint32_t selected_tile_left_ = 0;
     std::uint32_t selected_tile_top_ = 0;

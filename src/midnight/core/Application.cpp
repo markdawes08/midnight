@@ -1422,6 +1422,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Hold Shift and left-drag to paint a filled rectangle\n";
     std::cout << "[Midnight] Hold Ctrl and left-drag to select a rectangular map area\n";
     std::cout << "[Midnight] Press Delete to clear the selected map area\n";
+    std::cout << "[Midnight] Press Ctrl+Arrow to move the selected map area one cell\n";
     std::cout << "[Midnight] Right-click or drag across the map to erase tiles\n";
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
     std::cout << "[Midnight] Press F over the map to flood-fill with a 1x1 selection\n";
@@ -1511,19 +1512,43 @@ void Application::poll_events()
                         break;
 
                     case SDLK_LEFT:
-                        move_tile_selection(-1, 0);
+                        if ((event.key.mod & SDL_KMOD_CTRL) != 0) {
+                            if (!event.key.repeat) {
+                                move_selected_map_area(-1, 0);
+                            }
+                        } else {
+                            move_tile_selection(-1, 0);
+                        }
                         break;
 
                     case SDLK_RIGHT:
-                        move_tile_selection(1, 0);
+                        if ((event.key.mod & SDL_KMOD_CTRL) != 0) {
+                            if (!event.key.repeat) {
+                                move_selected_map_area(1, 0);
+                            }
+                        } else {
+                            move_tile_selection(1, 0);
+                        }
                         break;
 
                     case SDLK_UP:
-                        move_tile_selection(0, -1);
+                        if ((event.key.mod & SDL_KMOD_CTRL) != 0) {
+                            if (!event.key.repeat) {
+                                move_selected_map_area(0, -1);
+                            }
+                        } else {
+                            move_tile_selection(0, -1);
+                        }
                         break;
 
                     case SDLK_DOWN:
-                        move_tile_selection(0, 1);
+                        if ((event.key.mod & SDL_KMOD_CTRL) != 0) {
+                            if (!event.key.repeat) {
+                                move_selected_map_area(0, 1);
+                            }
+                        } else {
+                            move_tile_selection(0, 1);
+                        }
                         break;
 
                     case SDLK_G:
@@ -1874,13 +1899,21 @@ void Application::poll_events()
     flush_pending_map_hover();
 }
 
-void Application::begin_map_edit()
+void Application::begin_map_edit(
+    const bool include_area_selection
+)
 {
     if (map_edit_active_) {
         return;
     }
 
     active_map_edit_before_ = map_tiles_;
+    active_map_area_selection_before_ =
+        include_area_selection
+            ? std::optional<MapAreaSelectionState>{
+                  capture_map_area_selection_state()
+              }
+            : std::nullopt;
     map_edit_active_ = true;
 }
 
@@ -1890,21 +1923,57 @@ void Application::finish_map_edit()
         return;
     }
 
-    if (active_map_edit_before_ != map_tiles_) {
-        map_undo_stack_.push_back(
-            std::move(active_map_edit_before_)
-        );
+    const bool area_selection_changed =
+        active_map_area_selection_before_.has_value() &&
+        active_map_area_selection_before_.value() !=
+            capture_map_area_selection_state();
+
+    if (active_map_edit_before_ != map_tiles_ ||
+        area_selection_changed) {
+        map_undo_stack_.push_back(MapEditSnapshot{
+            .tiles = std::move(active_map_edit_before_),
+            .area_selection =
+                std::move(active_map_area_selection_before_)
+        });
         map_redo_stack_.clear();
-    } else {
-        active_map_edit_before_.clear();
     }
 
+    active_map_edit_before_.clear();
+    active_map_area_selection_before_.reset();
     map_edit_active_ = false;
+}
+
+Application::MapAreaSelectionState
+Application::capture_map_area_selection_state() const
+{
+    return MapAreaSelectionState{
+        .left = map_area_selection_left_,
+        .top = map_area_selection_top_,
+        .right = map_area_selection_right_,
+        .bottom = map_area_selection_bottom_,
+        .visible = map_area_selection_visible_
+    };
+}
+
+void Application::apply_map_area_selection_state(
+    const MapAreaSelectionState& state
+)
+{
+    map_area_selection_left_ = state.left;
+    map_area_selection_top_ = state.top;
+    map_area_selection_right_ = state.right;
+    map_area_selection_bottom_ = state.bottom;
+    map_area_selection_visible_ = state.visible;
+    map_area_selection_anchor_column_ = state.left;
+    map_area_selection_anchor_row_ = state.top;
+
+    upload_map_area_selection_vertices();
 }
 
 void Application::undo_map_edit()
 {
-    if (map_edit_active_) {
+    if (map_edit_active_ ||
+        map_area_selection_dragging_) {
         return;
     }
 
@@ -1915,9 +1984,29 @@ void Application::undo_map_edit()
 
     wait_for_rendering_resources();
 
-    map_redo_stack_.push_back(std::move(map_tiles_));
-    map_tiles_ = std::move(map_undo_stack_.back());
+    MapEditSnapshot previous =
+        std::move(map_undo_stack_.back());
     map_undo_stack_.pop_back();
+
+    MapEditSnapshot current{
+        .tiles = std::move(map_tiles_),
+        .area_selection = std::nullopt
+    };
+
+    if (previous.area_selection.has_value()) {
+        current.area_selection =
+            capture_map_area_selection_state();
+    }
+
+    map_tiles_ = std::move(previous.tiles);
+
+    if (previous.area_selection.has_value()) {
+        apply_map_area_selection_state(
+            previous.area_selection.value()
+        );
+    }
+
+    map_redo_stack_.push_back(std::move(current));
 
     for (std::uint32_t row = 0;
          row < kMapCanvasRows;
@@ -1934,7 +2023,8 @@ void Application::undo_map_edit()
 
 void Application::redo_map_edit()
 {
-    if (map_edit_active_) {
+    if (map_edit_active_ ||
+        map_area_selection_dragging_) {
         return;
     }
 
@@ -1945,9 +2035,29 @@ void Application::redo_map_edit()
 
     wait_for_rendering_resources();
 
-    map_undo_stack_.push_back(std::move(map_tiles_));
-    map_tiles_ = std::move(map_redo_stack_.back());
+    MapEditSnapshot next =
+        std::move(map_redo_stack_.back());
     map_redo_stack_.pop_back();
+
+    MapEditSnapshot current{
+        .tiles = std::move(map_tiles_),
+        .area_selection = std::nullopt
+    };
+
+    if (next.area_selection.has_value()) {
+        current.area_selection =
+            capture_map_area_selection_state();
+    }
+
+    map_tiles_ = std::move(next.tiles);
+
+    if (next.area_selection.has_value()) {
+        apply_map_area_selection_state(
+            next.area_selection.value()
+        );
+    }
+
+    map_undo_stack_.push_back(std::move(current));
 
     for (std::uint32_t row = 0;
          row < kMapCanvasRows;
@@ -2153,6 +2263,167 @@ void Application::delete_selected_map_area()
     std::cout << "[Midnight] Deleted "
               << deleted_cell_count
               << " painted map cells from selected area ("
+              << map_area_selection_left_
+              << ", "
+              << map_area_selection_top_
+              << ") to ("
+              << map_area_selection_right_
+              << ", "
+              << map_area_selection_bottom_
+              << ")\n";
+}
+
+void Application::move_selected_map_area(
+    const int column_delta,
+    const int row_delta
+)
+{
+    if (!map_area_selection_visible_) {
+        std::cout << "[Midnight] No map area selected\n";
+        return;
+    }
+
+    if (tile_selection_dragging_ ||
+        map_paint_dragging_ ||
+        map_rectangle_dragging_ ||
+        map_area_selection_dragging_ ||
+        map_erase_dragging_ ||
+        map_edit_active_) {
+        return;
+    }
+
+    const int next_left =
+        static_cast<int>(map_area_selection_left_) +
+        column_delta;
+    const int next_top =
+        static_cast<int>(map_area_selection_top_) +
+        row_delta;
+    const int next_right =
+        static_cast<int>(map_area_selection_right_) +
+        column_delta;
+    const int next_bottom =
+        static_cast<int>(map_area_selection_bottom_) +
+        row_delta;
+
+    if (next_left < 0 ||
+        next_top < 0 ||
+        next_right >= static_cast<int>(kMapCanvasColumns) ||
+        next_bottom >= static_cast<int>(kMapCanvasRows)) {
+        std::cout << "[Midnight] Selected map area cannot move outside the map\n";
+        return;
+    }
+
+    const std::uint32_t selected_column_count =
+        map_area_selection_right_ -
+        map_area_selection_left_ +
+        1;
+    const std::uint32_t selected_row_count =
+        map_area_selection_bottom_ -
+        map_area_selection_top_ +
+        1;
+    std::vector<MapTile> selected_tiles;
+    selected_tiles.reserve(
+        static_cast<std::size_t>(selected_column_count) *
+        selected_row_count
+    );
+
+    for (std::uint32_t row_offset = 0;
+         row_offset < selected_row_count;
+         ++row_offset) {
+        for (std::uint32_t column_offset = 0;
+             column_offset < selected_column_count;
+             ++column_offset) {
+            const std::uint32_t column =
+                map_area_selection_left_ + column_offset;
+            const std::uint32_t row =
+                map_area_selection_top_ + row_offset;
+            const std::size_t cell_index =
+                static_cast<std::size_t>(row) *
+                    kMapCanvasColumns +
+                column;
+
+            selected_tiles.push_back(
+                map_tiles_.at(cell_index)
+            );
+        }
+    }
+
+    std::vector<MapTile> moved_tiles = map_tiles_;
+
+    for (std::uint32_t row = map_area_selection_top_;
+         row <= map_area_selection_bottom_;
+         ++row) {
+        for (std::uint32_t column = map_area_selection_left_;
+             column <= map_area_selection_right_;
+             ++column) {
+            const std::size_t cell_index =
+                static_cast<std::size_t>(row) *
+                    kMapCanvasColumns +
+                column;
+            moved_tiles.at(cell_index) = MapTile{};
+        }
+    }
+
+    for (std::uint32_t row_offset = 0;
+         row_offset < selected_row_count;
+         ++row_offset) {
+        for (std::uint32_t column_offset = 0;
+             column_offset < selected_column_count;
+             ++column_offset) {
+            const std::uint32_t column =
+                static_cast<std::uint32_t>(next_left) +
+                column_offset;
+            const std::uint32_t row =
+                static_cast<std::uint32_t>(next_top) +
+                row_offset;
+            const std::size_t destination_index =
+                static_cast<std::size_t>(row) *
+                    kMapCanvasColumns +
+                column;
+            const std::size_t selected_index =
+                static_cast<std::size_t>(row_offset) *
+                    selected_column_count +
+                column_offset;
+
+            moved_tiles.at(destination_index) =
+                selected_tiles.at(selected_index);
+        }
+    }
+
+    begin_map_edit(true);
+    wait_for_rendering_resources();
+
+    for (std::size_t cell_index = 0;
+         cell_index < map_tiles_.size();
+         ++cell_index) {
+        if (map_tiles_.at(cell_index) ==
+            moved_tiles.at(cell_index)) {
+            continue;
+        }
+
+        map_tiles_.at(cell_index) =
+            moved_tiles.at(cell_index);
+
+        upload_map_tile_vertices(
+            static_cast<std::uint32_t>(
+                cell_index % kMapCanvasColumns
+            ),
+            static_cast<std::uint32_t>(
+                cell_index / kMapCanvasColumns
+            )
+        );
+    }
+
+    apply_map_area_selection_state(MapAreaSelectionState{
+        .left = static_cast<std::uint32_t>(next_left),
+        .top = static_cast<std::uint32_t>(next_top),
+        .right = static_cast<std::uint32_t>(next_right),
+        .bottom = static_cast<std::uint32_t>(next_bottom),
+        .visible = true
+    });
+    finish_map_edit();
+
+    std::cout << "[Midnight] Moved selected map area to cells ("
               << map_area_selection_left_
               << ", "
               << map_area_selection_top_
