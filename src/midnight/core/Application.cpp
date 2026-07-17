@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -47,10 +48,16 @@ constexpr std::size_t kOutdoorTilesetByteSize =
 
 static_assert(kOutdoorTilesetWidth % kTilesetTileWidth == 0);
 static_assert(kOutdoorTilesetHeight % kTilesetTileHeight == 0);
+static_assert(kMapLayerCount == 2);
 static_assert(kInitialSelectedTileColumn < kOutdoorTilesetColumns);
 static_assert(kInitialSelectedTileRow < kOutdoorTilesetRows);
 static_assert(kSelectedRegionPreviewMaxWidth >= kOutdoorTilesetWidth);
 static_assert(kSelectedRegionPreviewMaxHeight >= kOutdoorTilesetHeight);
+
+constexpr std::size_t map_layer_index(const MapLayer layer)
+{
+    return static_cast<std::size_t>(layer);
+}
 
 struct TextureRegion final {
     float left = 0.0f;
@@ -603,8 +610,11 @@ constexpr MapTileCellVertices make_map_tile_vertices(
 
 constexpr MapTileCellVertices kEmptyMapTileCellVertices{};
 
-constexpr std::size_t kMapTileVertexCount =
+constexpr std::size_t kMapTileLayerVertexCount =
     kMapCanvasCellCount * MapTileCellVertices{}.size();
+
+constexpr std::size_t kMapTileVertexCount =
+    kMapLayerCount * kMapTileLayerVertexCount;
 
 using MapTileVertices =
     std::array<Vertex2D, kMapTileVertexCount>;
@@ -840,6 +850,13 @@ constexpr std::size_t kQuadVertexCount =
     kMapTileVertexCount +
     kMapAreaSelectionVertexCount;
 
+static_assert(
+    kQuadVertexCount <=
+    static_cast<std::size_t>(
+        std::numeric_limits<std::uint16_t>::max()
+    ) + 1
+);
+
 constexpr std::size_t kTilesetGridVertexByteOffset =
     sizeof(kTilesetPreviewVertices);
 
@@ -873,7 +890,7 @@ constexpr std::size_t kQuadIndexCount =
         1 +
         kTilesetGridLineCount +
         kMapCanvasQuadCount +
-        kMapCanvasCellCount +
+        kMapLayerCount * kMapCanvasCellCount +
         1 +
         4 +
         4 +
@@ -975,16 +992,24 @@ constexpr QuadIndices make_quad_indices()
             kMapHoverVertexCount
         );
 
-    for (std::size_t cell = 0;
-         cell < kMapCanvasCellCount;
-         ++cell) {
-        append_quad_indices(
-            indices,
-            next_index,
-            static_cast<std::uint16_t>(
-                map_tile_first_vertex + cell * 4
-            )
-        );
+    for (std::size_t layer = 0;
+         layer < kMapLayerCount;
+         ++layer) {
+        for (std::size_t cell = 0;
+             cell < kMapCanvasCellCount;
+             ++cell) {
+            append_quad_indices(
+                indices,
+                next_index,
+                static_cast<std::uint16_t>(
+                    map_tile_first_vertex +
+                    (
+                        layer * kMapCanvasCellCount +
+                        cell
+                    ) * 4
+                )
+            );
+        }
     }
 
     for (std::size_t quad = 1;
@@ -1095,7 +1120,10 @@ Application::Application()
           vulkan_device_,
           VulkanSampler::CreateInfo{}
       ),
-      map_tiles_(kMapCanvasCellCount),
+      map_tile_layers_{
+          MapTileLayer(kMapCanvasCellCount),
+          MapTileLayer(kMapCanvasCellCount)
+      },
       selected_tile_left_(kInitialSelectedTileColumn),
       selected_tile_top_(kInitialSelectedTileRow),
       selected_tile_right_(kInitialSelectedTileColumn),
@@ -1383,6 +1411,47 @@ void Application::wait_for_rendering_resources()
     }
 }
 
+const char* Application::map_layer_name(
+    const MapLayer layer
+) noexcept
+{
+    switch (layer) {
+        case MapLayer::Ground:
+            return "Ground";
+
+        case MapLayer::AboveGround:
+            return "Above Ground";
+
+        case MapLayer::Count:
+            break;
+    }
+
+    return "Unknown";
+}
+
+bool Application::map_layer_blocks_movement(
+    const MapLayer layer
+) noexcept
+{
+    return layer == MapLayer::AboveGround;
+}
+
+Application::MapTileLayer&
+Application::active_map_tiles() noexcept
+{
+    return map_tile_layers_[
+        map_layer_index(active_map_layer_)
+    ];
+}
+
+const Application::MapTileLayer&
+Application::active_map_tiles() const noexcept
+{
+    return map_tile_layers_[
+        map_layer_index(active_map_layer_)
+    ];
+}
+
 void Application::print_startup_info() const
 {
     std::cout << "[Midnight] Application started\n";
@@ -1412,6 +1481,28 @@ void Application::print_startup_info() const
               << " tiles at "
               << kMapCanvasScale
               << "x\n";
+    std::cout << "[Midnight] Map layers: "
+              << map_layer_name(MapLayer::Ground)
+              << " ("
+              << (
+                    map_layer_blocks_movement(MapLayer::Ground)
+                        ? "collidable when occupied"
+                        : "walkable"
+                 )
+              << "), "
+              << map_layer_name(MapLayer::AboveGround)
+              << " ("
+              << (
+                    map_layer_blocks_movement(
+                        MapLayer::AboveGround
+                    )
+                        ? "collidable when occupied"
+                        : "walkable"
+                 )
+              << ")\n";
+    std::cout << "[Midnight] Active map layer: "
+              << map_layer_name(active_map_layer_)
+              << '\n';
     std::cout << "[Midnight] Rendering the outdoor tileset at "
               << kTilesetPreviewScale
               << "x\n";
@@ -1907,7 +1998,7 @@ void Application::begin_map_edit(
         return;
     }
 
-    active_map_edit_before_ = map_tiles_;
+    active_map_edit_before_ = map_tile_layers_;
     active_map_area_selection_before_ =
         include_area_selection
             ? std::optional<MapAreaSelectionState>{
@@ -1928,17 +2019,17 @@ void Application::finish_map_edit()
         active_map_area_selection_before_.value() !=
             capture_map_area_selection_state();
 
-    if (active_map_edit_before_ != map_tiles_ ||
+    if (active_map_edit_before_ != map_tile_layers_ ||
         area_selection_changed) {
         map_undo_stack_.push_back(MapEditSnapshot{
-            .tiles = std::move(active_map_edit_before_),
+            .layers = std::move(active_map_edit_before_),
             .area_selection =
                 std::move(active_map_area_selection_before_)
         });
         map_redo_stack_.clear();
     }
 
-    active_map_edit_before_.clear();
+    active_map_edit_before_ = MapTileLayers{};
     active_map_area_selection_before_.reset();
     map_edit_active_ = false;
 }
@@ -1989,7 +2080,7 @@ void Application::undo_map_edit()
     map_undo_stack_.pop_back();
 
     MapEditSnapshot current{
-        .tiles = std::move(map_tiles_),
+        .layers = std::move(map_tile_layers_),
         .area_selection = std::nullopt
     };
 
@@ -1998,7 +2089,7 @@ void Application::undo_map_edit()
             capture_map_area_selection_state();
     }
 
-    map_tiles_ = std::move(previous.tiles);
+    map_tile_layers_ = std::move(previous.layers);
 
     if (previous.area_selection.has_value()) {
         apply_map_area_selection_state(
@@ -2008,15 +2099,7 @@ void Application::undo_map_edit()
 
     map_redo_stack_.push_back(std::move(current));
 
-    for (std::uint32_t row = 0;
-         row < kMapCanvasRows;
-         ++row) {
-        for (std::uint32_t column = 0;
-             column < kMapCanvasColumns;
-             ++column) {
-            upload_map_tile_vertices(column, row);
-        }
-    }
+    upload_all_map_tile_vertices();
 
     std::cout << "[Midnight] Undid map edit\n";
 }
@@ -2040,7 +2123,7 @@ void Application::redo_map_edit()
     map_redo_stack_.pop_back();
 
     MapEditSnapshot current{
-        .tiles = std::move(map_tiles_),
+        .layers = std::move(map_tile_layers_),
         .area_selection = std::nullopt
     };
 
@@ -2049,7 +2132,7 @@ void Application::redo_map_edit()
             capture_map_area_selection_state();
     }
 
-    map_tiles_ = std::move(next.tiles);
+    map_tile_layers_ = std::move(next.layers);
 
     if (next.area_selection.has_value()) {
         apply_map_area_selection_state(
@@ -2059,15 +2142,7 @@ void Application::redo_map_edit()
 
     map_undo_stack_.push_back(std::move(current));
 
-    for (std::uint32_t row = 0;
-         row < kMapCanvasRows;
-         ++row) {
-        for (std::uint32_t column = 0;
-             column < kMapCanvasColumns;
-             ++column) {
-            upload_map_tile_vertices(column, row);
-        }
-    }
+    upload_all_map_tile_vertices();
 
     std::cout << "[Midnight] Redid map edit\n";
 }
@@ -2099,7 +2174,8 @@ void Application::flood_fill_map()
         static_cast<std::size_t>(hovered_map_row_) *
             kMapCanvasColumns +
         hovered_map_column_;
-    const MapTile target = map_tiles_.at(start_index);
+    MapTileLayer& map_tiles = active_map_tiles();
+    const MapTile target = map_tiles.at(start_index);
 
     if (target == replacement) {
         return;
@@ -2125,7 +2201,7 @@ void Application::flood_fill_map()
         const std::size_t cell_index
     ) {
         if (queued.at(cell_index) ||
-            !matches_target(map_tiles_.at(cell_index))) {
+            !matches_target(map_tiles.at(cell_index))) {
             return;
         }
 
@@ -2179,7 +2255,7 @@ void Application::flood_fill_map()
                 cell_index / kMapCanvasColumns
             );
 
-        map_tiles_.at(cell_index) = replacement;
+        map_tiles.at(cell_index) = replacement;
         upload_map_tile_vertices(column, row);
     }
 
@@ -2210,6 +2286,7 @@ void Application::delete_selected_map_area()
         return;
     }
 
+    MapTileLayer& map_tiles = active_map_tiles();
     std::size_t deleted_cell_count = 0;
 
     for (std::uint32_t row = map_area_selection_top_;
@@ -2223,7 +2300,7 @@ void Application::delete_selected_map_area()
                     kMapCanvasColumns +
                 column;
 
-            if (map_tiles_.at(cell_index).occupied) {
+            if (map_tiles.at(cell_index).occupied) {
                 ++deleted_cell_count;
             }
         }
@@ -2247,7 +2324,7 @@ void Application::delete_selected_map_area()
                 static_cast<std::size_t>(row) *
                     kMapCanvasColumns +
                 column;
-            MapTile& map_tile = map_tiles_.at(cell_index);
+            MapTile& map_tile = map_tiles.at(cell_index);
 
             if (!map_tile.occupied) {
                 continue;
@@ -2292,6 +2369,7 @@ void Application::move_selected_map_area(
         return;
     }
 
+    MapTileLayer& map_tiles = active_map_tiles();
     const int next_left =
         static_cast<int>(map_area_selection_left_) +
         column_delta;
@@ -2343,12 +2421,12 @@ void Application::move_selected_map_area(
                 column;
 
             selected_tiles.push_back(
-                map_tiles_.at(cell_index)
+                map_tiles.at(cell_index)
             );
         }
     }
 
-    std::vector<MapTile> moved_tiles = map_tiles_;
+    std::vector<MapTile> moved_tiles = map_tiles;
 
     for (std::uint32_t row = map_area_selection_top_;
          row <= map_area_selection_bottom_;
@@ -2394,14 +2472,14 @@ void Application::move_selected_map_area(
     wait_for_rendering_resources();
 
     for (std::size_t cell_index = 0;
-         cell_index < map_tiles_.size();
+         cell_index < map_tiles.size();
          ++cell_index) {
-        if (map_tiles_.at(cell_index) ==
+        if (map_tiles.at(cell_index) ==
             moved_tiles.at(cell_index)) {
             continue;
         }
 
-        map_tiles_.at(cell_index) =
+        map_tiles.at(cell_index) =
             moved_tiles.at(cell_index);
 
         upload_map_tile_vertices(
@@ -2501,9 +2579,15 @@ void Application::update_map_rectangle_paint(
 
 void Application::apply_map_rectangle_paint()
 {
+    const MapTileLayer& edit_before_tiles =
+        active_map_edit_before_.at(
+            map_layer_index(active_map_layer_)
+        );
+    MapTileLayer& map_tiles = active_map_tiles();
+
     if (!map_rectangle_dragging_ ||
         !map_edit_active_ ||
-        active_map_edit_before_.size() != map_tiles_.size()) {
+        edit_before_tiles.size() != map_tiles.size()) {
         return;
     }
 
@@ -2533,7 +2617,7 @@ void Application::apply_map_rectangle_paint()
         1;
 
     std::vector<MapTile> rectangle_tiles =
-        active_map_edit_before_;
+        edit_before_tiles;
 
     for (std::uint32_t row = top; row <= bottom; ++row) {
         for (std::uint32_t column = left;
@@ -2556,21 +2640,21 @@ void Application::apply_map_rectangle_paint()
         }
     }
 
-    if (rectangle_tiles == map_tiles_) {
+    if (rectangle_tiles == map_tiles) {
         return;
     }
 
     wait_for_rendering_resources();
 
     for (std::size_t cell_index = 0;
-         cell_index < map_tiles_.size();
+         cell_index < map_tiles.size();
          ++cell_index) {
         if (rectangle_tiles.at(cell_index) ==
-            map_tiles_.at(cell_index)) {
+            map_tiles.at(cell_index)) {
             continue;
         }
 
-        map_tiles_.at(cell_index) =
+        map_tiles.at(cell_index) =
             rectangle_tiles.at(cell_index);
 
         upload_map_tile_vertices(
@@ -2616,7 +2700,9 @@ void Application::finish_map_rectangle_paint()
         1;
     const bool map_changed =
         map_edit_active_ &&
-        active_map_edit_before_ != map_tiles_;
+        active_map_edit_before_.at(
+            map_layer_index(active_map_layer_)
+        ) != active_map_tiles();
 
     map_rectangle_dragging_ = false;
     finish_map_edit();
@@ -2785,6 +2871,7 @@ bool Application::paint_map_selection(
     last_map_paint_column_ = column;
     last_map_paint_row_ = row;
 
+    MapTileLayer& map_tiles = active_map_tiles();
     const std::uint32_t selected_column_count =
         selected_tile_right_ - selected_tile_left_ + 1;
     const std::uint32_t selected_row_count =
@@ -2825,7 +2912,7 @@ bool Application::paint_map_selection(
                     kMapCanvasColumns +
                 map_column;
             const MapTile& map_tile =
-                map_tiles_.at(cell_index);
+                map_tiles.at(cell_index);
 
             if (!tile_matches(
                     map_tile,
@@ -2862,7 +2949,7 @@ bool Application::paint_map_selection(
                 static_cast<std::size_t>(map_row) *
                     kMapCanvasColumns +
                 map_column;
-            MapTile& map_tile = map_tiles_.at(cell_index);
+            MapTile& map_tile = map_tiles.at(cell_index);
 
             if (tile_matches(
                     map_tile,
@@ -2929,10 +3016,11 @@ bool Application::erase_map_tile(
     last_map_erase_column_ = column;
     last_map_erase_row_ = row;
 
+    MapTileLayer& map_tiles = active_map_tiles();
     const std::size_t cell_index =
         static_cast<std::size_t>(row) * kMapCanvasColumns +
         column;
-    MapTile& map_tile = map_tiles_.at(cell_index);
+    MapTile& map_tile = map_tiles.at(cell_index);
 
     if (!map_tile.occupied) {
         return true;
@@ -2969,10 +3057,11 @@ void Application::pick_map_tile(
         return;
     }
 
+    const MapTileLayer& map_tiles = active_map_tiles();
     const std::size_t cell_index =
         static_cast<std::size_t>(row) * kMapCanvasColumns +
         column;
-    const MapTile& map_tile = map_tiles_.at(cell_index);
+    const MapTile& map_tile = map_tiles.at(cell_index);
 
     if (!map_tile.occupied) {
         return;
@@ -3001,10 +3090,28 @@ void Application::upload_map_tile_vertices(
     const std::uint32_t row
 )
 {
+    upload_map_tile_vertices(
+        active_map_layer_,
+        column,
+        row
+    );
+}
+
+void Application::upload_map_tile_vertices(
+    const MapLayer layer,
+    const std::uint32_t column,
+    const std::uint32_t row
+)
+{
     const std::size_t cell_index =
         static_cast<std::size_t>(row) * kMapCanvasColumns +
         column;
-    const MapTile& map_tile = map_tiles_.at(cell_index);
+    const std::size_t layer_cell_index =
+        map_layer_index(layer) * kMapCanvasCellCount +
+        cell_index;
+    const MapTile& map_tile =
+        map_tile_layers_.at(map_layer_index(layer))
+            .at(cell_index);
     const MapTileCellVertices vertices =
         map_tile.occupied
             ? make_map_tile_vertices(
@@ -3019,9 +3126,30 @@ void Application::upload_map_tile_vertices(
         vertices.data(),
         sizeof(vertices),
         kMapTileVertexByteOffset +
-            static_cast<VkDeviceSize>(cell_index) *
+            static_cast<VkDeviceSize>(layer_cell_index) *
             sizeof(vertices)
     );
+}
+
+void Application::upload_all_map_tile_vertices()
+{
+    for (std::size_t layer_index = 0;
+         layer_index < kMapLayerCount;
+         ++layer_index) {
+        for (std::uint32_t row = 0;
+             row < kMapCanvasRows;
+             ++row) {
+            for (std::uint32_t column = 0;
+                 column < kMapCanvasColumns;
+                 ++column) {
+                upload_map_tile_vertices(
+                    static_cast<MapLayer>(layer_index),
+                    column,
+                    row
+                );
+            }
+        }
+    }
 }
 
 void Application::update_map_hover(

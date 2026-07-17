@@ -15,12 +15,23 @@
 #include "midnight/renderer/vulkan/VulkanTextureDescriptor.hpp"
 #include "midnight/renderer/vulkan/VulkanTransferContext.hpp"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <vector>
 
 namespace midnight {
+
+enum class MapLayer : std::uint8_t {
+    Ground,
+    AboveGround,
+    Count
+};
+
+inline constexpr std::size_t kMapLayerCount =
+    static_cast<std::size_t>(MapLayer::Count);
 
 class Application final {
 public:
@@ -62,11 +73,24 @@ private:
         bool operator==(const MapAreaSelectionState&) const = default;
     };
 
+    using MapTileLayer = std::vector<MapTile>;
+    using MapTileLayers =
+        std::array<MapTileLayer, kMapLayerCount>;
+
     struct MapEditSnapshot final {
-        std::vector<MapTile> tiles;
+        MapTileLayers layers;
         std::optional<MapAreaSelectionState> area_selection;
     };
 
+    [[nodiscard]] static const char* map_layer_name(
+        MapLayer layer
+    ) noexcept;
+    [[nodiscard]] static bool map_layer_blocks_movement(
+        MapLayer layer
+    ) noexcept;
+    [[nodiscard]] MapTileLayer& active_map_tiles() noexcept;
+    [[nodiscard]] const MapTileLayer&
+        active_map_tiles() const noexcept;
     void print_startup_info() const;
     void poll_events();
     [[nodiscard]] SwapchainResources create_swapchain_resources(
@@ -106,6 +130,12 @@ private:
         std::uint32_t column,
         std::uint32_t row
     );
+    void upload_map_tile_vertices(
+        MapLayer layer,
+        std::uint32_t column,
+        std::uint32_t row
+    );
+    void upload_all_map_tile_vertices();
     void update_map_hover(float x, float y);
     void clear_map_hover();
     [[nodiscard]] bool window_position_to_map_cell(
@@ -152,13 +182,14 @@ private:
     VulkanSampler texture_sampler_;
     SwapchainResources swapchain_resources_;
     std::vector<SwapchainResources> retired_swapchain_resources_;
-    std::vector<MapTile> map_tiles_;
-    std::vector<MapTile> active_map_edit_before_;
+    MapTileLayers map_tile_layers_;
+    MapTileLayers active_map_edit_before_;
     std::optional<MapAreaSelectionState>
         active_map_area_selection_before_;
     std::vector<MapEditSnapshot> map_undo_stack_;
     std::vector<MapEditSnapshot> map_redo_stack_;
 
+    MapLayer active_map_layer_ = MapLayer::Ground;
     std::uint32_t selected_tile_left_ = 0;
     std::uint32_t selected_tile_top_ = 0;
     std::uint32_t selected_tile_right_ = 0;
