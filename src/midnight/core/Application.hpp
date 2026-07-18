@@ -91,6 +91,7 @@ private:
     [[nodiscard]] MapTileLayer& active_map_tiles() noexcept;
     [[nodiscard]] const MapTileLayer&
         active_map_tiles() const noexcept;
+    void set_active_map_layer(MapLayer layer);
     void print_startup_info() const;
     void poll_events();
     [[nodiscard]] SwapchainResources create_swapchain_resources(

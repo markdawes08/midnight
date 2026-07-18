@@ -1452,6 +1452,33 @@ Application::active_map_tiles() const noexcept
     ];
 }
 
+void Application::set_active_map_layer(
+    const MapLayer layer
+)
+{
+    if (tile_selection_dragging_ ||
+        map_paint_dragging_ ||
+        map_rectangle_dragging_ ||
+        map_area_selection_dragging_ ||
+        map_erase_dragging_ ||
+        map_edit_active_) {
+        std::cout << "[Midnight] Finish the current drag or edit before switching layers\n";
+        return;
+    }
+
+    active_map_layer_ = layer;
+
+    std::cout << "[Midnight] Active map layer: "
+              << map_layer_name(active_map_layer_)
+              << " ("
+              << (
+                    map_layer_blocks_movement(active_map_layer_)
+                        ? "collidable when occupied"
+                        : "walkable"
+                 )
+              << ")\n";
+}
+
 void Application::print_startup_info() const
 {
     std::cout << "[Midnight] Application started\n";
@@ -1518,6 +1545,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
     std::cout << "[Midnight] Press F over the map to flood-fill with a 1x1 selection\n";
     std::cout << "[Midnight] Press Ctrl+Z to undo and Ctrl+Shift+Z to redo map edits\n";
+    std::cout << "[Midnight] Press 1 for Ground or 2 for Above Ground\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press M to toggle the map grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
@@ -1600,6 +1628,22 @@ void Application::poll_events()
                 switch (event.key.key) {
                     case SDLK_ESCAPE:
                         running_ = false;
+                        break;
+
+                    case SDLK_1:
+                        if (!event.key.repeat) {
+                            set_active_map_layer(
+                                MapLayer::Ground
+                            );
+                        }
+                        break;
+
+                    case SDLK_2:
+                        if (!event.key.repeat) {
+                            set_active_map_layer(
+                                MapLayer::AboveGround
+                            );
+                        }
                         break;
 
                     case SDLK_LEFT:
