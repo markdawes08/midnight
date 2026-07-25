@@ -137,6 +137,12 @@ private:
         std::uint32_t row
     );
     void upload_all_map_tile_vertices();
+    void toggle_collision_overlay();
+    void upload_collision_overlay_cell_vertices(
+        std::uint32_t column,
+        std::uint32_t row
+    );
+    void upload_collision_overlay_vertices();
     void update_map_hover(float x, float y);
     void clear_map_hover();
     [[nodiscard]] bool window_position_to_map_cell(
@@ -219,6 +225,7 @@ private:
     std::uint32_t map_area_selection_bottom_ = 0;
     bool tileset_grid_visible_ = true;
     bool map_grid_visible_ = true;
+    bool collision_overlay_visible_ = false;
     bool tile_selection_dragging_ = false;
     bool map_paint_dragging_ = false;
     bool map_rectangle_dragging_ = false;

@@ -217,7 +217,7 @@ void VulkanGraphicsPipeline::create_graphics_pipeline()
 
     vertex_attributes[1].binding = 0;
     vertex_attributes[1].location = 1;
-    vertex_attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    vertex_attributes[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     vertex_attributes[1].offset = offsetof(Vertex2D, color_r);
 
     vertex_attributes[2].binding = 0;

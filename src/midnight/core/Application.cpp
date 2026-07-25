@@ -217,6 +217,10 @@ constexpr float kGroundMapHoverBlue = 1.0f;
 constexpr float kAboveGroundMapHoverRed = 1.0f;
 constexpr float kAboveGroundMapHoverGreen = 0.35f;
 constexpr float kAboveGroundMapHoverBlue = 0.10f;
+constexpr float kCollisionOverlayRed = 1.0f;
+constexpr float kCollisionOverlayGreen = 0.05f;
+constexpr float kCollisionOverlayBlue = 0.08f;
+constexpr float kCollisionOverlayAlpha = 0.35f;
 constexpr std::uint32_t kMapAreaSelectionOutlineThickness = 3;
 constexpr float kMapAreaSelectionRed = 1.0f;
 constexpr float kMapAreaSelectionGreen = 0.30f;
@@ -253,10 +257,10 @@ constexpr float kMapAreaSelectionOutlineHeight =
     static_cast<float>(kInitialWindowHeight);
 
 constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
-    Vertex2D{kTilesetPreviewLeft,  kTilesetPreviewTop,    1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
-    Vertex2D{kTilesetPreviewRight, kTilesetPreviewTop,    1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
-    Vertex2D{kTilesetPreviewRight, kTilesetPreviewBottom, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
-    Vertex2D{kTilesetPreviewLeft,  kTilesetPreviewBottom, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f}
+    Vertex2D{kTilesetPreviewLeft,  kTilesetPreviewTop,    1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 0.0f},
+    Vertex2D{kTilesetPreviewRight, kTilesetPreviewTop,    1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f},
+    Vertex2D{kTilesetPreviewRight, kTilesetPreviewBottom, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f},
+    Vertex2D{kTilesetPreviewLeft,  kTilesetPreviewBottom, 1.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f}
 }};
 
 constexpr Vertex2D solid_color_vertex(
@@ -264,7 +268,8 @@ constexpr Vertex2D solid_color_vertex(
     const float position_y,
     const float red,
     const float green,
-    const float blue
+    const float blue,
+    const float alpha = 1.0f
 )
 {
     return Vertex2D{
@@ -273,6 +278,7 @@ constexpr Vertex2D solid_color_vertex(
         red,
         green,
         blue,
+        alpha,
         0.0f,
         0.0f,
         0
@@ -596,25 +602,25 @@ constexpr MapTileCellVertices make_map_tile_vertices(
     return {{
         Vertex2D{
             left, top,
-            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f, 1.0f,
             texture_region.left,
             texture_region.top
         },
         Vertex2D{
             right, top,
-            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f, 1.0f,
             texture_region.right,
             texture_region.top
         },
         Vertex2D{
             right, bottom,
-            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f, 1.0f,
             texture_region.right,
             texture_region.bottom
         },
         Vertex2D{
             left, bottom,
-            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f, 1.0f,
             texture_region.left,
             texture_region.bottom
         }
@@ -633,6 +639,73 @@ using MapTileVertices =
     std::array<Vertex2D, kMapTileVertexCount>;
 
 constexpr MapTileVertices kEmptyMapTileVertices{};
+
+using CollisionOverlayCellVertices =
+    std::array<Vertex2D, 4>;
+
+constexpr CollisionOverlayCellVertices
+make_collision_overlay_cell_vertices(
+    const std::uint32_t column,
+    const std::uint32_t row
+)
+{
+    const float left =
+        kMapCanvasLeft +
+        static_cast<float>(column) * kMapCanvasCellWidth;
+    const float top =
+        kMapCanvasTop +
+        static_cast<float>(row) * kMapCanvasCellHeight;
+    const float right = left + kMapCanvasCellWidth;
+    const float bottom = top + kMapCanvasCellHeight;
+
+    return {{
+        solid_color_vertex(
+            left,
+            top,
+            kCollisionOverlayRed,
+            kCollisionOverlayGreen,
+            kCollisionOverlayBlue,
+            kCollisionOverlayAlpha
+        ),
+        solid_color_vertex(
+            right,
+            top,
+            kCollisionOverlayRed,
+            kCollisionOverlayGreen,
+            kCollisionOverlayBlue,
+            kCollisionOverlayAlpha
+        ),
+        solid_color_vertex(
+            right,
+            bottom,
+            kCollisionOverlayRed,
+            kCollisionOverlayGreen,
+            kCollisionOverlayBlue,
+            kCollisionOverlayAlpha
+        ),
+        solid_color_vertex(
+            left,
+            bottom,
+            kCollisionOverlayRed,
+            kCollisionOverlayGreen,
+            kCollisionOverlayBlue,
+            kCollisionOverlayAlpha
+        )
+    }};
+}
+
+constexpr CollisionOverlayCellVertices
+    kEmptyCollisionOverlayCellVertices{};
+
+constexpr std::size_t kCollisionOverlayVertexCount =
+    kMapCanvasCellCount *
+    CollisionOverlayCellVertices{}.size();
+
+using CollisionOverlayVertices =
+    std::array<Vertex2D, kCollisionOverlayVertexCount>;
+
+constexpr CollisionOverlayVertices
+    kEmptyCollisionOverlayVertices{};
 
 constexpr std::size_t kMapHoverVertexCount = 8;
 
@@ -819,28 +892,28 @@ make_tile_selection_vertices(
         Vertex2D{
             kSelectedRegionPreviewCenterX - preview_half_width,
             kSelectedRegionPreviewCenterY - preview_half_height,
-            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f, 1.0f,
             selected_region.left,
             selected_region.top
         },
         Vertex2D{
             kSelectedRegionPreviewCenterX + preview_half_width,
             kSelectedRegionPreviewCenterY - preview_half_height,
-            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f, 1.0f,
             selected_region.right,
             selected_region.top
         },
         Vertex2D{
             kSelectedRegionPreviewCenterX + preview_half_width,
             kSelectedRegionPreviewCenterY + preview_half_height,
-            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f, 1.0f,
             selected_region.right,
             selected_region.bottom
         },
         Vertex2D{
             kSelectedRegionPreviewCenterX - preview_half_width,
             kSelectedRegionPreviewCenterY + preview_half_height,
-            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f, 1.0f,
             selected_region.left,
             selected_region.bottom
         },
@@ -862,6 +935,7 @@ constexpr std::size_t kQuadVertexCount =
     kTileSelectionVertexCount +
     kMapHoverVertexCount +
     kMapTileVertexCount +
+    kCollisionOverlayVertexCount +
     kMapAreaSelectionVertexCount;
 
 static_assert(
@@ -895,9 +969,13 @@ constexpr std::size_t kMapTileVertexByteOffset =
     kMapHoverVertexByteOffset +
     sizeof(Vertex2D) * kMapHoverVertexCount;
 
-constexpr std::size_t kMapAreaSelectionVertexByteOffset =
+constexpr std::size_t kCollisionOverlayVertexByteOffset =
     kMapTileVertexByteOffset +
     sizeof(Vertex2D) * kMapTileVertexCount;
+
+constexpr std::size_t kMapAreaSelectionVertexByteOffset =
+    kCollisionOverlayVertexByteOffset +
+    sizeof(Vertex2D) * kCollisionOverlayVertexCount;
 
 constexpr std::size_t kQuadIndexCount =
     (
@@ -905,6 +983,7 @@ constexpr std::size_t kQuadIndexCount =
         kTilesetGridLineCount +
         kMapCanvasQuadCount +
         kMapLayerCount * kMapCanvasCellCount +
+        kMapCanvasCellCount +
         1 +
         4 +
         4 +
@@ -1026,6 +1105,22 @@ constexpr QuadIndices make_quad_indices()
         }
     }
 
+    const std::uint16_t collision_overlay_first_vertex =
+        map_tile_first_vertex +
+        static_cast<std::uint16_t>(kMapTileVertexCount);
+
+    for (std::size_t cell = 0;
+         cell < kMapCanvasCellCount;
+         ++cell) {
+        append_quad_indices(
+            indices,
+            next_index,
+            static_cast<std::uint16_t>(
+                collision_overlay_first_vertex + cell * 4
+            )
+        );
+    }
+
     for (std::size_t quad = 1;
          quad < kMapCanvasQuadCount;
          ++quad) {
@@ -1058,8 +1153,10 @@ constexpr QuadIndices make_quad_indices()
     );
 
     const std::uint16_t map_area_selection_first_vertex =
-        map_tile_first_vertex +
-        static_cast<std::uint16_t>(kMapTileVertexCount);
+        collision_overlay_first_vertex +
+        static_cast<std::uint16_t>(
+            kCollisionOverlayVertexCount
+        );
 
     append_outline_indices(
         indices,
@@ -1167,6 +1264,12 @@ Application::Application()
         kEmptyMapTileVertices.data(),
         sizeof(kEmptyMapTileVertices),
         kMapTileVertexByteOffset
+    );
+
+    quad_vertex_buffer_.upload(
+        kEmptyCollisionOverlayVertices.data(),
+        sizeof(kEmptyCollisionOverlayVertices),
+        kCollisionOverlayVertexByteOffset
     );
 
     upload_map_area_selection_vertices();
@@ -1565,6 +1668,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Press F over the map to flood-fill with a 1x1 selection\n";
     std::cout << "[Midnight] Press Ctrl+Z to undo and Ctrl+Shift+Z to redo map edits\n";
     std::cout << "[Midnight] Press 1 for Ground (cyan cursor) or 2 for Above Ground (red-orange cursor)\n";
+    std::cout << "[Midnight] Press C to toggle the Above Ground collision overlay\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press M to toggle the map grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
@@ -1702,6 +1806,12 @@ void Application::poll_events()
                             }
                         } else {
                             move_tile_selection(0, 1);
+                        }
+                        break;
+
+                    case SDLK_C:
+                        if (!event.key.repeat) {
+                            toggle_collision_overlay();
                         }
                         break;
 
@@ -3192,6 +3302,13 @@ void Application::upload_map_tile_vertices(
             static_cast<VkDeviceSize>(layer_cell_index) *
             sizeof(vertices)
     );
+
+    if (layer == MapLayer::AboveGround) {
+        upload_collision_overlay_cell_vertices(
+            column,
+            row
+        );
+    }
 }
 
 void Application::upload_all_map_tile_vertices()
@@ -3211,6 +3328,98 @@ void Application::upload_all_map_tile_vertices()
                     row
                 );
             }
+        }
+    }
+}
+
+void Application::toggle_collision_overlay()
+{
+    wait_for_rendering_resources();
+
+    collision_overlay_visible_ =
+        !collision_overlay_visible_;
+    upload_collision_overlay_vertices();
+
+    std::cout << "[Midnight] Collision overlay "
+              << (
+                    collision_overlay_visible_
+                        ? "shown"
+                        : "hidden"
+                 );
+
+    if (collision_overlay_visible_) {
+        const MapTileLayer& above_ground_tiles =
+            map_tile_layers_.at(
+                map_layer_index(MapLayer::AboveGround)
+            );
+        const std::size_t blocked_cell_count =
+            static_cast<std::size_t>(
+                std::count_if(
+                    above_ground_tiles.begin(),
+                    above_ground_tiles.end(),
+                    [](const MapTile& map_tile) {
+                        return map_tile.occupied;
+                    }
+                )
+            );
+
+        std::cout << " ("
+                  << blocked_cell_count
+                  << " blocked "
+                  << (
+                        blocked_cell_count == 1
+                            ? "cell"
+                            : "cells"
+                     )
+                  << ")";
+    }
+
+    std::cout << '\n';
+}
+
+void Application::upload_collision_overlay_cell_vertices(
+    const std::uint32_t column,
+    const std::uint32_t row
+)
+{
+    const std::size_t cell_index =
+        static_cast<std::size_t>(row) *
+            kMapCanvasColumns +
+        column;
+    const MapTile& above_ground_tile =
+        map_tile_layers_.at(
+            map_layer_index(MapLayer::AboveGround)
+        ).at(cell_index);
+    const CollisionOverlayCellVertices vertices =
+        collision_overlay_visible_ &&
+            above_ground_tile.occupied
+            ? make_collision_overlay_cell_vertices(
+                  column,
+                  row
+              )
+            : kEmptyCollisionOverlayCellVertices;
+
+    quad_vertex_buffer_.upload(
+        vertices.data(),
+        sizeof(vertices),
+        kCollisionOverlayVertexByteOffset +
+            static_cast<VkDeviceSize>(cell_index) *
+            sizeof(vertices)
+    );
+}
+
+void Application::upload_collision_overlay_vertices()
+{
+    for (std::uint32_t row = 0;
+         row < kMapCanvasRows;
+         ++row) {
+        for (std::uint32_t column = 0;
+             column < kMapCanvasColumns;
+             ++column) {
+            upload_collision_overlay_cell_vertices(
+                column,
+                row
+            );
         }
     }
 }

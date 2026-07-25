@@ -1,11 +1,11 @@
 #version 450
 
 layout(location = 0) in vec2 in_position;
-layout(location = 1) in vec3 in_color;
+layout(location = 1) in vec4 in_color;
 layout(location = 2) in vec2 in_texture_coordinate;
 layout(location = 3) in uint in_texture_enabled;
 
-layout(location = 0) out vec3 out_color;
+layout(location = 0) out vec4 out_color;
 layout(location = 1) out vec2 out_texture_coordinate;
 layout(location = 2) flat out uint out_texture_enabled;
 
