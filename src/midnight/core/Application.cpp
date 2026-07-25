@@ -211,9 +211,12 @@ constexpr float kMapGridRed = 0.24f;
 constexpr float kMapGridGreen = 0.27f;
 constexpr float kMapGridBlue = 0.38f;
 constexpr std::uint32_t kMapHoverOutlineThickness = 2;
-constexpr float kMapHoverRed = 0.10f;
-constexpr float kMapHoverGreen = 0.85f;
-constexpr float kMapHoverBlue = 1.0f;
+constexpr float kGroundMapHoverRed = 0.10f;
+constexpr float kGroundMapHoverGreen = 0.85f;
+constexpr float kGroundMapHoverBlue = 1.0f;
+constexpr float kAboveGroundMapHoverRed = 1.0f;
+constexpr float kAboveGroundMapHoverGreen = 0.35f;
+constexpr float kAboveGroundMapHoverBlue = 0.10f;
 constexpr std::uint32_t kMapAreaSelectionOutlineThickness = 3;
 constexpr float kMapAreaSelectionRed = 1.0f;
 constexpr float kMapAreaSelectionGreen = 0.30f;
@@ -292,15 +295,25 @@ constexpr Vertex2D selection_outline_vertex(
 
 constexpr Vertex2D map_hover_vertex(
     const float position_x,
-    const float position_y
+    const float position_y,
+    const MapLayer layer
 )
 {
+    const bool above_ground =
+        layer == MapLayer::AboveGround;
+
     return solid_color_vertex(
         position_x,
         position_y,
-        kMapHoverRed,
-        kMapHoverGreen,
-        kMapHoverBlue
+        above_ground
+            ? kAboveGroundMapHoverRed
+            : kGroundMapHoverRed,
+        above_ground
+            ? kAboveGroundMapHoverGreen
+            : kGroundMapHoverGreen,
+        above_ground
+            ? kAboveGroundMapHoverBlue
+            : kGroundMapHoverBlue
     );
 }
 
@@ -628,7 +641,8 @@ using MapHoverVertices =
 
 constexpr MapHoverVertices make_map_hover_vertices(
     const std::uint32_t column,
-    const std::uint32_t row
+    const std::uint32_t row,
+    const MapLayer layer
 )
 {
     const float left =
@@ -646,14 +660,14 @@ constexpr MapHoverVertices make_map_hover_vertices(
     const float inner_bottom = bottom - kMapHoverOutlineHeight;
 
     return {{
-        map_hover_vertex(left, top),
-        map_hover_vertex(right, top),
-        map_hover_vertex(right, bottom),
-        map_hover_vertex(left, bottom),
-        map_hover_vertex(inner_left, inner_top),
-        map_hover_vertex(inner_right, inner_top),
-        map_hover_vertex(inner_right, inner_bottom),
-        map_hover_vertex(inner_left, inner_bottom)
+        map_hover_vertex(left, top, layer),
+        map_hover_vertex(right, top, layer),
+        map_hover_vertex(right, bottom, layer),
+        map_hover_vertex(left, bottom, layer),
+        map_hover_vertex(inner_left, inner_top, layer),
+        map_hover_vertex(inner_right, inner_top, layer),
+        map_hover_vertex(inner_right, inner_bottom, layer),
+        map_hover_vertex(inner_left, inner_bottom, layer)
     }};
 }
 
@@ -1468,6 +1482,11 @@ void Application::set_active_map_layer(
 
     active_map_layer_ = layer;
 
+    if (map_hover_visible_) {
+        wait_for_rendering_resources();
+        upload_map_hover_vertices();
+    }
+
     std::cout << "[Midnight] Active map layer: "
               << map_layer_name(active_map_layer_)
               << " ("
@@ -1545,7 +1564,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
     std::cout << "[Midnight] Press F over the map to flood-fill with a 1x1 selection\n";
     std::cout << "[Midnight] Press Ctrl+Z to undo and Ctrl+Shift+Z to redo map edits\n";
-    std::cout << "[Midnight] Press 1 for Ground or 2 for Above Ground\n";
+    std::cout << "[Midnight] Press 1 for Ground (cyan cursor) or 2 for Above Ground (red-orange cursor)\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press M to toggle the map grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
@@ -3303,7 +3322,8 @@ void Application::upload_map_hover_vertices()
         map_hover_visible_
             ? make_map_hover_vertices(
                   hovered_map_column_,
-                  hovered_map_row_
+                  hovered_map_row_,
+                  active_map_layer_
               )
             : kHiddenMapHoverVertices;
 
