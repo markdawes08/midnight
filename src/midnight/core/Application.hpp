@@ -85,6 +85,9 @@ private:
     [[nodiscard]] static const char* map_layer_name(
         MapLayer layer
     ) noexcept;
+    [[nodiscard]] static const char* map_layer_id(
+        MapLayer layer
+    ) noexcept;
     [[nodiscard]] static bool map_layer_blocks_movement(
         MapLayer layer
     ) noexcept;
@@ -92,6 +95,7 @@ private:
     [[nodiscard]] const MapTileLayer&
         active_map_tiles() const noexcept;
     void set_active_map_layer(MapLayer layer);
+    void save_map() const;
     void print_startup_info() const;
     void poll_events();
     [[nodiscard]] SwapchainResources create_swapchain_resources(

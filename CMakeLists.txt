@@ -25,9 +25,11 @@ endif()
 
 set(MIDNIGHT_SHADER_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 set(MIDNIGHT_ASSET_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/assets")
+set(MIDNIGHT_MAP_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets/maps")
 
 set(MIDNIGHT_ASSET_FILES
     assets/README.md
+    assets/maps/village.json
     assets/tilesets/basic_village/SOURCE.md
     assets/tilesets/basic_village/furniture.png
     assets/tilesets/basic_village/house_tileset.png
@@ -126,6 +128,7 @@ target_link_libraries(midnight
 target_compile_definitions(midnight
     PRIVATE
         "MIDNIGHT_ASSET_DIR=\"${MIDNIGHT_ASSET_OUTPUT_DIR}\""
+        "MIDNIGHT_MAP_DIR=\"${MIDNIGHT_MAP_SOURCE_DIR}\""
         "MIDNIGHT_SHADER_DIR=\"${MIDNIGHT_SHADER_OUTPUT_DIR}\""
 )
 

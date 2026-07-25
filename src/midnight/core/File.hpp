@@ -15,4 +15,9 @@ namespace midnight {
     const std::filesystem::path& path
 );
 
+void write_text_file_atomically(
+    const std::filesystem::path& path,
+    const std::string& contents
+);
+
 }

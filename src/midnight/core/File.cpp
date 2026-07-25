@@ -66,4 +66,56 @@ std::string read_text_file(const std::filesystem::path& path)
     return stream.str();
 }
 
+void write_text_file_atomically(
+    const std::filesystem::path& path,
+    const std::string& contents
+)
+{
+    const std::filesystem::path parent_path =
+        path.parent_path();
+
+    if (!parent_path.empty()) {
+        std::filesystem::create_directories(parent_path);
+    }
+
+    std::filesystem::path temporary_path = path;
+    temporary_path += ".tmp";
+
+    try {
+        std::ofstream file(
+            temporary_path,
+            std::ios::binary | std::ios::trunc
+        );
+
+        if (!file) {
+            throw std::runtime_error(
+                "Failed to open text file for writing: " +
+                path_to_string(temporary_path)
+            );
+        }
+
+        file.write(
+            contents.data(),
+            static_cast<std::streamsize>(contents.size())
+        );
+        file.close();
+
+        if (!file) {
+            throw std::runtime_error(
+                "Failed to write text file: " +
+                path_to_string(temporary_path)
+            );
+        }
+
+        std::filesystem::rename(temporary_path, path);
+    } catch (...) {
+        std::error_code remove_error;
+        std::filesystem::remove(
+            temporary_path,
+            remove_error
+        );
+        throw;
+    }
+}
+
 }

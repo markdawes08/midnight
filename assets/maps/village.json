@@ -1,0 +1,42 @@
+{
+  "format": "midnight-map",
+  "version": 1,
+  "size": {
+    "columns": 16,
+    "rows": 12
+  },
+  "tile_size": {
+    "width": 16,
+    "height": 16
+  },
+  "tilesets": [
+    {
+      "id": "basic_village_outdoor",
+      "image": "../tilesets/basic_village/outdoor_tileset.png",
+      "tile_size": {
+        "width": 16,
+        "height": 16
+      },
+      "spacing": 0,
+      "margin": 0
+    }
+  ],
+  "layers": [
+    {
+      "id": "ground",
+      "name": "Ground",
+      "type": "tile",
+      "blocks_movement": false,
+      "encoding": "sparse",
+      "tiles": []
+    },
+    {
+      "id": "above_ground",
+      "name": "Above Ground",
+      "type": "tile",
+      "blocks_movement": true,
+      "encoding": "sparse",
+      "tiles": []
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 #include "midnight/core/Application.hpp"
 
 #include "midnight/assets/Png.hpp"
+#include "midnight/core/File.hpp"
 #include "midnight/renderer/Vertex2D.hpp"
 
 #include <SDL3/SDL.h>
@@ -12,6 +13,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 
@@ -37,6 +39,11 @@ constexpr std::uint32_t kSelectedRegionPreviewMaxHeight = 256;
 constexpr std::uint32_t kMapCanvasColumns = 16;
 constexpr std::uint32_t kMapCanvasRows = 12;
 constexpr std::uint32_t kMapCanvasScale = 2;
+constexpr const char* kMapFileName = "village.json";
+constexpr const char* kOutdoorTilesetId =
+    "basic_village_outdoor";
+constexpr const char* kOutdoorTilesetMapRelativePath =
+    "../tilesets/basic_village/outdoor_tileset.png";
 constexpr std::uint64_t kSwapchainResizeSettleMilliseconds = 250;
 constexpr std::size_t kMapCanvasCellCount =
     static_cast<std::size_t>(kMapCanvasColumns) *
@@ -1546,6 +1553,24 @@ const char* Application::map_layer_name(
     return "Unknown";
 }
 
+const char* Application::map_layer_id(
+    const MapLayer layer
+) noexcept
+{
+    switch (layer) {
+        case MapLayer::Ground:
+            return "ground";
+
+        case MapLayer::AboveGround:
+            return "above_ground";
+
+        case MapLayer::Count:
+            break;
+    }
+
+    return "unknown";
+}
+
 bool Application::map_layer_blocks_movement(
     const MapLayer layer
 ) noexcept
@@ -1599,6 +1624,143 @@ void Application::set_active_map_layer(
                         : "walkable"
                  )
               << ")\n";
+}
+
+void Application::save_map() const
+{
+    const std::filesystem::path map_path =
+        std::filesystem::path(MIDNIGHT_MAP_DIR) /
+        kMapFileName;
+
+    try {
+        std::ostringstream json;
+        std::size_t occupied_tile_count = 0;
+
+        json << "{\n"
+             << "  \"format\": \"midnight-map\",\n"
+             << "  \"version\": 1,\n"
+             << "  \"size\": {\n"
+             << "    \"columns\": " << kMapCanvasColumns << ",\n"
+             << "    \"rows\": " << kMapCanvasRows << "\n"
+             << "  },\n"
+             << "  \"tile_size\": {\n"
+             << "    \"width\": " << kTilesetTileWidth << ",\n"
+             << "    \"height\": " << kTilesetTileHeight << "\n"
+             << "  },\n"
+             << "  \"tilesets\": [\n"
+             << "    {\n"
+             << "      \"id\": \"" << kOutdoorTilesetId << "\",\n"
+             << "      \"image\": \""
+             << kOutdoorTilesetMapRelativePath
+             << "\",\n"
+             << "      \"tile_size\": {\n"
+             << "        \"width\": " << kTilesetTileWidth << ",\n"
+             << "        \"height\": " << kTilesetTileHeight << "\n"
+             << "      },\n"
+             << "      \"spacing\": 0,\n"
+             << "      \"margin\": 0\n"
+             << "    }\n"
+             << "  ],\n"
+             << "  \"layers\": [\n";
+
+        for (std::size_t layer_index = 0;
+             layer_index < kMapLayerCount;
+             ++layer_index) {
+            const MapLayer layer =
+                static_cast<MapLayer>(layer_index);
+            const MapTileLayer& map_tiles =
+                map_tile_layers_.at(layer_index);
+            bool first_tile = true;
+
+            json << "    {\n"
+                 << "      \"id\": \"" << map_layer_id(layer) << "\",\n"
+                 << "      \"name\": \"" << map_layer_name(layer) << "\",\n"
+                 << "      \"type\": \"tile\",\n"
+                 << "      \"blocks_movement\": "
+                 << (
+                        map_layer_blocks_movement(layer)
+                            ? "true"
+                            : "false"
+                    )
+                 << ",\n"
+                 << "      \"encoding\": \"sparse\",\n"
+                 << "      \"tiles\": [";
+
+            for (std::uint32_t row = 0;
+                 row < kMapCanvasRows;
+                 ++row) {
+                for (std::uint32_t column = 0;
+                     column < kMapCanvasColumns;
+                     ++column) {
+                    const std::size_t cell_index =
+                        static_cast<std::size_t>(row) *
+                            kMapCanvasColumns +
+                        column;
+                    const MapTile& map_tile =
+                        map_tiles.at(cell_index);
+
+                    if (!map_tile.occupied) {
+                        continue;
+                    }
+
+                    json << (first_tile ? "\n" : ",\n")
+                         << "        { \"x\": " << column
+                         << ", \"y\": " << row
+                         << ", \"tileset\": \""
+                         << kOutdoorTilesetId
+                         << "\", \"tile_x\": "
+                         << map_tile.tileset_column
+                         << ", \"tile_y\": "
+                         << map_tile.tileset_row
+                         << " }";
+
+                    first_tile = false;
+                    ++occupied_tile_count;
+                }
+            }
+
+            if (first_tile) {
+                json << "]\n";
+            } else {
+                json << "\n"
+                     << "      ]\n";
+            }
+
+            json << "    }";
+
+            if (layer_index + 1 < kMapLayerCount) {
+                json << ',';
+            }
+
+            json << '\n';
+        }
+
+        json << "  ]\n"
+             << "}\n";
+
+        write_text_file_atomically(
+            map_path,
+            json.str()
+        );
+
+        std::cout << "[Midnight] Map saved: "
+                  << map_path.lexically_normal().string()
+                  << " ("
+                  << occupied_tile_count
+                  << " occupied "
+                  << (
+                        occupied_tile_count == 1
+                            ? "tile"
+                            : "tiles"
+                     )
+                  << ")\n";
+    } catch (const std::exception& error) {
+        std::cerr << "[Midnight] Failed to save map: "
+                  << map_path.lexically_normal().string()
+                  << ": "
+                  << error.what()
+                  << '\n';
+    }
 }
 
 void Application::print_startup_info() const
@@ -1667,6 +1829,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Middle-click a painted map tile to select it\n";
     std::cout << "[Midnight] Press F over the map to flood-fill with a 1x1 selection\n";
     std::cout << "[Midnight] Press Ctrl+Z to undo and Ctrl+Shift+Z to redo map edits\n";
+    std::cout << "[Midnight] Press Ctrl+S to save assets/maps/village.json\n";
     std::cout << "[Midnight] Press 1 for Ground (cyan cursor) or 2 for Above Ground (red-orange cursor)\n";
     std::cout << "[Midnight] Press C to toggle the Above Ground collision overlay\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
@@ -1837,6 +2000,14 @@ void Application::poll_events()
                     case SDLK_DELETE:
                         if (!event.key.repeat) {
                             delete_selected_map_area();
+                        }
+                        break;
+
+                    case SDLK_S:
+                        if (!event.key.repeat &&
+                            (event.key.mod & SDL_KMOD_CTRL) != 0) {
+                            finish_pointer_gestures();
+                            save_map();
                         }
                         break;
 
