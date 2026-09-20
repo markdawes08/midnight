@@ -1275,6 +1275,7 @@ Application::Application()
       selected_tile_bottom_(kInitialSelectedTileRow)
 {
     const std::filesystem::path outdoor_tileset_path = load_map();
+    update_window_title();
 
     swapchain_resources_ = create_swapchain_resources();
     swapchain_window_pixel_width_ = window_.pixel_width();
@@ -1757,6 +1758,7 @@ std::filesystem::path Application::load_map()
         }
 
         map_tile_layers_ = std::move(loaded_layers);
+        saved_map_tile_layers_ = map_tile_layers_;
 
         std::cout << "[Midnight] Map loaded: " << map_path.string()
                   << " (" << occupied_tile_count << " occupied "
@@ -1771,7 +1773,7 @@ std::filesystem::path Application::load_map()
     }
 }
 
-void Application::save_map() const
+void Application::save_map()
 {
     const std::filesystem::path map_path =
         std::filesystem::path(MIDNIGHT_MAP_DIR) /
@@ -1883,10 +1885,14 @@ void Application::save_map() const
         json << "  ]\n"
              << "}\n";
 
+        MapTileLayers saved_layers = map_tile_layers_;
+
         write_text_file_atomically(
             map_path,
             json.str()
         );
+
+        saved_map_tile_layers_ = std::move(saved_layers);
 
         std::cout << "[Midnight] Map saved: "
                   << map_path.lexically_normal().string()
@@ -1906,6 +1912,31 @@ void Application::save_map() const
                   << error.what()
                   << '\n';
     }
+
+    update_window_title();
+}
+
+void Application::update_window_title()
+{
+    const bool has_unsaved_changes =
+        !saved_map_tile_layers_.has_value() ||
+        map_tile_layers_ != saved_map_tile_layers_.value();
+
+    if (has_unsaved_changes == unsaved_changes_shown_) {
+        return;
+    }
+
+    if (!SDL_SetWindowTitle(
+            window_.sdl_handle(),
+            has_unsaved_changes ? "Midnight *" : "Midnight"
+        )) {
+        std::cerr << "[Midnight] Failed to update window title: "
+                  << SDL_GetError()
+                  << '\n';
+        return;
+    }
+
+    unsaved_changes_shown_ = has_unsaved_changes;
 }
 
 void Application::print_startup_info() const
@@ -1975,6 +2006,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Press F over the map to flood-fill with a 1x1 selection\n";
     std::cout << "[Midnight] Press Ctrl+Z to undo and Ctrl+Shift+Z to redo map edits\n";
     std::cout << "[Midnight] Press Ctrl+S to save assets/maps/village.json\n";
+    std::cout << "[Midnight] An asterisk (*) in the window title means unsaved map changes\n";
     std::cout << "[Midnight] Press 1 for Ground (cyan cursor) or 2 for Above Ground (red-orange cursor)\n";
     std::cout << "[Midnight] Press C to toggle the Above Ground collision overlay\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
@@ -2477,6 +2509,7 @@ void Application::poll_events()
 
     flush_pending_tile_selection_drag();
     flush_pending_map_hover();
+    update_window_title();
 }
 
 void Application::begin_map_edit(

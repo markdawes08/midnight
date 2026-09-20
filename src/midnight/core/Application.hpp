@@ -97,7 +97,8 @@ private:
         active_map_tiles() const noexcept;
     void set_active_map_layer(MapLayer layer);
     [[nodiscard]] std::filesystem::path load_map();
-    void save_map() const;
+    void save_map();
+    void update_window_title();
     void print_startup_info() const;
     void poll_events();
     [[nodiscard]] SwapchainResources create_swapchain_resources(
@@ -196,6 +197,7 @@ private:
     SwapchainResources swapchain_resources_;
     std::vector<SwapchainResources> retired_swapchain_resources_;
     MapTileLayers map_tile_layers_;
+    std::optional<MapTileLayers> saved_map_tile_layers_;
     MapTileLayers active_map_edit_before_;
     std::optional<MapAreaSelectionState>
         active_map_area_selection_before_;
@@ -232,6 +234,7 @@ private:
     bool tileset_grid_visible_ = true;
     bool map_grid_visible_ = true;
     bool collision_overlay_visible_ = false;
+    bool unsaved_changes_shown_ = false;
     bool tile_selection_dragging_ = false;
     bool map_paint_dragging_ = false;
     bool map_rectangle_dragging_ = false;
