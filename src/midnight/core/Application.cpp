@@ -5,6 +5,7 @@
 #include "midnight/renderer/Vertex2D.hpp"
 
 #include <SDL3/SDL.h>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <array>
@@ -15,6 +16,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace midnight {
@@ -64,6 +66,42 @@ static_assert(kSelectedRegionPreviewMaxHeight >= kOutdoorTilesetHeight);
 constexpr std::size_t map_layer_index(const MapLayer layer)
 {
     return static_cast<std::size_t>(layer);
+}
+
+void require_map_value(
+    const nlohmann::json& actual,
+    const nlohmann::json& expected,
+    const std::string& field
+)
+{
+    const bool correct_type = expected.is_number_integer()
+        ? actual.is_number_unsigned()
+        : actual.type() == expected.type();
+
+    if (!correct_type || actual != expected) {
+        throw std::runtime_error(
+            "Unsupported map field '" + field +
+            "': expected " + expected.dump()
+        );
+    }
+}
+
+std::uint32_t map_coordinate(
+    const nlohmann::json& value,
+    const std::uint32_t limit,
+    const std::string& field
+)
+{
+    if (!value.is_number_unsigned() ||
+        value.get<std::uint64_t>() >= limit) {
+        throw std::runtime_error(
+            "Invalid map coordinate '" + field +
+            "': expected an integer from 0 to " +
+            std::to_string(limit - 1)
+        );
+    }
+
+    return value.get<std::uint32_t>();
 }
 
 struct TextureRegion final {
@@ -642,11 +680,6 @@ constexpr std::size_t kMapTileLayerVertexCount =
 constexpr std::size_t kMapTileVertexCount =
     kMapLayerCount * kMapTileLayerVertexCount;
 
-using MapTileVertices =
-    std::array<Vertex2D, kMapTileVertexCount>;
-
-constexpr MapTileVertices kEmptyMapTileVertices{};
-
 using CollisionOverlayCellVertices =
     std::array<Vertex2D, 4>;
 
@@ -707,12 +740,6 @@ constexpr CollisionOverlayCellVertices
 constexpr std::size_t kCollisionOverlayVertexCount =
     kMapCanvasCellCount *
     CollisionOverlayCellVertices{}.size();
-
-using CollisionOverlayVertices =
-    std::array<Vertex2D, kCollisionOverlayVertexCount>;
-
-constexpr CollisionOverlayVertices
-    kEmptyCollisionOverlayVertices{};
 
 constexpr std::size_t kMapHoverVertexCount = 8;
 
@@ -1247,6 +1274,8 @@ Application::Application()
       selected_tile_right_(kInitialSelectedTileColumn),
       selected_tile_bottom_(kInitialSelectedTileRow)
 {
+    const std::filesystem::path outdoor_tileset_path = load_map();
+
     swapchain_resources_ = create_swapchain_resources();
     swapchain_window_pixel_width_ = window_.pixel_width();
     swapchain_window_pixel_height_ = window_.pixel_height();
@@ -1267,28 +1296,13 @@ Application::Application()
     upload_tile_selection_vertices();
     upload_map_hover_vertices();
 
-    quad_vertex_buffer_.upload(
-        kEmptyMapTileVertices.data(),
-        sizeof(kEmptyMapTileVertices),
-        kMapTileVertexByteOffset
-    );
-
-    quad_vertex_buffer_.upload(
-        kEmptyCollisionOverlayVertices.data(),
-        sizeof(kEmptyCollisionOverlayVertices),
-        kCollisionOverlayVertexByteOffset
-    );
-
+    upload_all_map_tile_vertices();
     upload_map_area_selection_vertices();
 
     quad_index_buffer_.upload(
         kQuadIndices.data(),
         kQuadIndexBufferSize
     );
-
-    const std::filesystem::path outdoor_tileset_path =
-        std::filesystem::path(MIDNIGHT_ASSET_DIR) /
-        "tilesets/basic_village/outdoor_tileset.png";
 
     const RgbaImage outdoor_tileset =
         load_png_rgba8(outdoor_tileset_path);
@@ -1626,6 +1640,137 @@ void Application::set_active_map_layer(
               << ")\n";
 }
 
+std::filesystem::path Application::load_map()
+{
+    const std::filesystem::path map_path =
+        std::filesystem::path(MIDNIGHT_MAP_DIR) / kMapFileName;
+    const std::filesystem::path tileset_path =
+        (map_path.parent_path() / kOutdoorTilesetMapRelativePath)
+            .lexically_normal();
+
+    try {
+        if (!std::filesystem::exists(map_path)) {
+            std::cout << "[Midnight] Map not found: "
+                      << map_path.string()
+                      << "; starting with a blank map\n";
+            return tileset_path;
+        }
+
+        const nlohmann::json document =
+            nlohmann::json::parse(read_text_file(map_path));
+
+        require_map_value(document.at("format"), "midnight-map", "format");
+        require_map_value(document.at("version"), 1, "version");
+        require_map_value(document.at("size").at("columns"), kMapCanvasColumns, "size.columns");
+        require_map_value(document.at("size").at("rows"), kMapCanvasRows, "size.rows");
+        require_map_value(document.at("tile_size").at("width"), kTilesetTileWidth, "tile_size.width");
+        require_map_value(document.at("tile_size").at("height"), kTilesetTileHeight, "tile_size.height");
+
+        const auto& tilesets = document.at("tilesets");
+
+        if (!tilesets.is_array() || tilesets.size() != 1) {
+            throw std::runtime_error("Expected exactly one outdoor tileset");
+        }
+
+        const auto& tileset = tilesets.at(0);
+        require_map_value(tileset.at("id"), kOutdoorTilesetId, "tilesets[0].id");
+        require_map_value(tileset.at("image"), kOutdoorTilesetMapRelativePath, "tilesets[0].image");
+        require_map_value(tileset.at("tile_size").at("width"), kTilesetTileWidth, "tilesets[0].tile_size.width");
+        require_map_value(tileset.at("tile_size").at("height"), kTilesetTileHeight, "tilesets[0].tile_size.height");
+        require_map_value(tileset.at("spacing"), 0, "tilesets[0].spacing");
+        require_map_value(tileset.at("margin"), 0, "tilesets[0].margin");
+
+        const auto& layers = document.at("layers");
+
+        if (!layers.is_array() || layers.size() != kMapLayerCount) {
+            throw std::runtime_error("Expected Ground and Above Ground layers, in that order");
+        }
+
+        MapTileLayers loaded_layers{
+            MapTileLayer(kMapCanvasCellCount),
+            MapTileLayer(kMapCanvasCellCount)
+        };
+        std::size_t occupied_tile_count = 0;
+
+        for (std::size_t layer_index = 0;
+             layer_index < kMapLayerCount;
+             ++layer_index) {
+            const MapLayer layer = static_cast<MapLayer>(layer_index);
+            const auto& saved_layer = layers.at(layer_index);
+            const std::string context =
+                "layers[" + std::to_string(layer_index) + "]";
+
+            require_map_value(saved_layer.at("id"), map_layer_id(layer), context + ".id");
+            require_map_value(saved_layer.at("name"), map_layer_name(layer), context + ".name");
+            require_map_value(saved_layer.at("type"), "tile", context + ".type");
+            require_map_value(saved_layer.at("encoding"), "sparse", context + ".encoding");
+            require_map_value(saved_layer.at("blocks_movement"), map_layer_blocks_movement(layer), context + ".blocks_movement");
+
+            const auto& tiles = saved_layer.at("tiles");
+
+            if (!tiles.is_array() || tiles.size() > kMapCanvasCellCount) {
+                throw std::runtime_error(
+                    context + ".tiles must be an array with at most " +
+                    std::to_string(kMapCanvasCellCount) + " entries"
+                );
+            }
+
+            for (std::size_t tile_index = 0;
+                 tile_index < tiles.size();
+                 ++tile_index) {
+                const auto& tile = tiles.at(tile_index);
+                const std::string tile_context = context +
+                    ".tiles[" + std::to_string(tile_index) + "]";
+                require_map_value(tile.at("tileset"), kOutdoorTilesetId, tile_context + ".tileset");
+
+                const std::uint32_t column = map_coordinate(
+                    tile.at("x"), kMapCanvasColumns, tile_context + ".x"
+                );
+                const std::uint32_t row = map_coordinate(
+                    tile.at("y"), kMapCanvasRows, tile_context + ".y"
+                );
+                const std::uint32_t tileset_column = map_coordinate(
+                    tile.at("tile_x"), kOutdoorTilesetColumns, tile_context + ".tile_x"
+                );
+                const std::uint32_t tileset_row = map_coordinate(
+                    tile.at("tile_y"), kOutdoorTilesetRows, tile_context + ".tile_y"
+                );
+                MapTile& destination = loaded_layers.at(layer_index).at(
+                    static_cast<std::size_t>(row) * kMapCanvasColumns + column
+                );
+
+                if (destination.occupied) {
+                    throw std::runtime_error(
+                        "Duplicate map cell in " + tile_context +
+                        " at (" + std::to_string(column) +
+                        ", " + std::to_string(row) + ")"
+                    );
+                }
+
+                destination = MapTile{
+                    .tileset_column = tileset_column,
+                    .tileset_row = tileset_row,
+                    .occupied = true
+                };
+                ++occupied_tile_count;
+            }
+        }
+
+        map_tile_layers_ = std::move(loaded_layers);
+
+        std::cout << "[Midnight] Map loaded: " << map_path.string()
+                  << " (" << occupied_tile_count << " occupied "
+                  << (occupied_tile_count == 1 ? "tile" : "tiles")
+                  << ")\n";
+        return tileset_path;
+    } catch (const std::exception& error) {
+        throw std::runtime_error(
+            "Failed to load map '" + map_path.string() + "': " +
+            error.what() + ". The map file has not been changed."
+        );
+    }
+}
+
 void Application::save_map() const
 {
     const std::filesystem::path map_path =
@@ -1785,7 +1930,7 @@ void Application::print_startup_info() const
               << "x"
               << kTilesetTileHeight
               << " pixels\n";
-    std::cout << "[Midnight] Blank map canvas: "
+    std::cout << "[Midnight] Map canvas: "
               << kMapCanvasColumns
               << "x"
               << kMapCanvasRows

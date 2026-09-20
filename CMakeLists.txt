@@ -13,6 +13,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Vulkan REQUIRED COMPONENTS glslangValidator)
 find_package(PNG REQUIRED)
 
+include(FetchContent)
+
+FetchContent_Declare(nlohmann_json
+    URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+    URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
+)
+
+FetchContent_MakeAvailable(nlohmann_json)
+
 find_package(SDL3 CONFIG QUIET)
 
 if(SDL3_FOUND)
@@ -121,6 +130,7 @@ target_include_directories(midnight
 target_link_libraries(midnight
     PRIVATE
         ${MIDNIGHT_SDL_TARGET}
+        nlohmann_json::nlohmann_json
         PNG::PNG
         Vulkan::Vulkan
 )

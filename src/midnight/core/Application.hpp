@@ -18,6 +18,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -95,6 +96,7 @@ private:
     [[nodiscard]] const MapTileLayer&
         active_map_tiles() const noexcept;
     void set_active_map_layer(MapLayer layer);
+    [[nodiscard]] std::filesystem::path load_map();
     void save_map() const;
     void print_startup_info() const;
     void poll_events();
