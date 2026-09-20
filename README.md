@@ -24,8 +24,13 @@ The window title shows `Midnight *` while the map differs from the last
 successful load or save. Saving successfully or undoing back to the saved
 content removes the asterisk. Selection, layer, grid, and collision-overlay
 changes do not affect it. A new blank map with no file stays marked until
-its first successful save. Failed saves leave the indicator unchanged;
-closing still discards unsaved edits without a confirmation prompt.
+its first successful save. Failed saves leave the indicator unchanged.
+
+Escape or the window close button asks you to **Save**, **Discard**, or
+**Cancel** when changes are unsaved. Save closes only after a successful
+write; a failed save keeps the map open. Cancel (also Enter, Escape, or
+dismissing the dialog) returns to editing. Maps with no unsaved changes
+close immediately.
 
 This increment supports the existing version-1 format: a 16×12 map,
 16×16 tiles, the outdoor tileset, and Ground followed by Above Ground.

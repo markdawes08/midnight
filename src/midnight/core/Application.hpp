@@ -97,7 +97,9 @@ private:
         active_map_tiles() const noexcept;
     void set_active_map_layer(MapLayer layer);
     [[nodiscard]] std::filesystem::path load_map();
-    void save_map();
+    [[nodiscard]] bool save_map();
+    [[nodiscard]] bool has_unsaved_map_changes() const;
+    void request_close();
     void update_window_title();
     void print_startup_info() const;
     void poll_events();

@@ -1773,7 +1773,7 @@ std::filesystem::path Application::load_map()
     }
 }
 
-void Application::save_map()
+bool Application::save_map()
 {
     const std::filesystem::path map_path =
         std::filesystem::path(MIDNIGHT_MAP_DIR) /
@@ -1911,16 +1911,84 @@ void Application::save_map()
                   << ": "
                   << error.what()
                   << '\n';
+        update_window_title();
+        return false;
     }
 
     update_window_title();
+    return true;
+}
+
+bool Application::has_unsaved_map_changes() const
+{
+    return !saved_map_tile_layers_.has_value() ||
+        map_tile_layers_ != saved_map_tile_layers_.value();
+}
+
+void Application::request_close()
+{
+    if (!has_unsaved_map_changes()) {
+        running_ = false;
+        return;
+    }
+
+    constexpr int kCancel = 0;
+    constexpr int kSave = 1;
+    constexpr int kDiscard = 2;
+    const SDL_MessageBoxButtonData buttons[] = {
+        {0, kSave, "Save"},
+        {0, kDiscard, "Discard"},
+        {
+            SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT |
+                SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,
+            kCancel,
+            "Cancel"
+        }
+    };
+    const std::string message =
+        std::string("Save changes to ") + kMapFileName +
+        " before closing?\nDiscard will lose your unsaved edits.";
+    const SDL_MessageBoxData dialog{
+        .flags = SDL_MESSAGEBOX_WARNING |
+            SDL_MESSAGEBOX_BUTTONS_LEFT_TO_RIGHT,
+        .window = window_.sdl_handle(),
+        .title = "Midnight - Unsaved changes",
+        .message = message.c_str(),
+        .numbuttons = 3,
+        .buttons = buttons,
+        .colorScheme = nullptr
+    };
+    int choice = kCancel;
+
+    if (!SDL_ShowMessageBox(&dialog, &choice)) {
+        std::cerr << "[Midnight] Could not show close confirmation: "
+                  << SDL_GetError()
+                  << "; keeping the map open\n";
+        return;
+    }
+
+    if (choice == kDiscard) {
+        running_ = false;
+    } else if (choice == kSave) {
+        if (save_map()) {
+            running_ = false;
+        } else if (!SDL_ShowSimpleMessageBox(
+                       SDL_MESSAGEBOX_ERROR,
+                       "Midnight - Save failed",
+                       "The map could not be saved. Your edits are still open.\n"
+                       "Check the terminal for details, then try saving again.",
+                       window_.sdl_handle()
+                   )) {
+            std::cerr << "[Midnight] Could not show save error: "
+                      << SDL_GetError()
+                      << '\n';
+        }
+    }
 }
 
 void Application::update_window_title()
 {
-    const bool has_unsaved_changes =
-        !saved_map_tile_layers_.has_value() ||
-        map_tile_layers_ != saved_map_tile_layers_.value();
+    const bool has_unsaved_changes = has_unsaved_map_changes();
 
     if (has_unsaved_changes == unsaved_changes_shown_) {
         return;
@@ -2012,11 +2080,13 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press M to toggle the map grid\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
+    std::cout << "[Midnight] Unsaved changes prompt you to Save, Discard, or Cancel before closing\n";
 }
 
 void Application::poll_events()
 {
     SDL_Event event{};
+    bool close_requested = false;
     bool tile_selection_drag_update_pending = false;
     float pending_tile_selection_drag_x = 0.0f;
     float pending_tile_selection_drag_y = 0.0f;
@@ -2081,8 +2151,13 @@ void Application::poll_events()
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
             case SDL_EVENT_QUIT:
+                close_requested = true;
+                break;
+
             case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-                running_ = false;
+                if (event.window.windowID == SDL_GetWindowID(window_.sdl_handle())) {
+                    close_requested = true;
+                }
                 break;
 
             case SDL_EVENT_KEY_DOWN:
@@ -2090,7 +2165,9 @@ void Application::poll_events()
 
                 switch (event.key.key) {
                     case SDLK_ESCAPE:
-                        running_ = false;
+                        if (!event.key.repeat) {
+                            close_requested = true;
+                        }
                         break;
 
                     case SDLK_1:
@@ -2184,7 +2261,7 @@ void Application::poll_events()
                         if (!event.key.repeat &&
                             (event.key.mod & SDL_KMOD_CTRL) != 0) {
                             finish_pointer_gestures();
-                            save_map();
+                            (void)save_map();
                         }
                         break;
 
@@ -2510,6 +2587,13 @@ void Application::poll_events()
     flush_pending_tile_selection_drag();
     flush_pending_map_hover();
     update_window_title();
+
+    if (close_requested) {
+        finish_pointer_gestures();
+        request_close();
+        SDL_FlushEvent(SDL_EVENT_QUIT);
+        SDL_FlushEvent(SDL_EVENT_WINDOW_CLOSE_REQUESTED);
+    }
 }
 
 void Application::begin_map_edit(
