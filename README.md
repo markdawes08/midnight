@@ -13,6 +13,19 @@ cmake --build build -j2
 ./build/midnight
 ```
 
+## Map zoom
+
+Press `+`/`=` or `-` (keypad keys also work) to switch between 1×, 2×,
+and 3× map zoom. The default is 2×. Each 16×16 tile occupies exactly
+16×16, 32×32, or 48×48 framebuffer pixels, including after resizing.
+The map grid, collision overlay, hover, selection outline, and painting
+follow the same zoom; the atlas and selected-sprite preview are unchanged.
+
+Finish any drag before changing zoom. Zoom is a view setting: it does not
+change the map, undo history, or unsaved indicator, and resets on restart.
+In small windows the map stays to the right of the atlas but may be
+clipped; zoom out or enlarge the window to see the full canvas.
+
 ## Map persistence
 
 Startup loads `assets/maps/village.json` from the source checkout.

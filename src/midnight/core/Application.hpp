@@ -146,6 +146,9 @@ private:
         std::uint32_t row
     );
     void upload_all_map_tile_vertices();
+    void change_map_zoom(int delta);
+    void refresh_map_geometry();
+    void upload_map_canvas_vertices();
     void toggle_collision_overlay();
     void upload_collision_overlay_cell_vertices(
         std::uint32_t column,
@@ -207,6 +210,7 @@ private:
     std::vector<MapEditSnapshot> map_redo_stack_;
 
     MapLayer active_map_layer_ = MapLayer::Ground;
+    std::uint32_t map_zoom_ = 2;
     std::uint32_t selected_tile_left_ = 0;
     std::uint32_t selected_tile_top_ = 0;
     std::uint32_t selected_tile_right_ = 0;

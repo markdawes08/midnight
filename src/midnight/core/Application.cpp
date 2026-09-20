@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -40,7 +41,8 @@ constexpr std::uint32_t kSelectedRegionPreviewMaxWidth = 192;
 constexpr std::uint32_t kSelectedRegionPreviewMaxHeight = 256;
 constexpr std::uint32_t kMapCanvasColumns = 16;
 constexpr std::uint32_t kMapCanvasRows = 12;
-constexpr std::uint32_t kMapCanvasScale = 2;
+constexpr int kMinimumMapZoom = 1;
+constexpr int kMaximumMapZoom = 3;
 constexpr const char* kMapFileName = "village.json";
 constexpr const char* kOutdoorTilesetId =
     "basic_village_outdoor";
@@ -162,45 +164,62 @@ constexpr float kSelectedRegionPreviewMaxHalfHeight =
 constexpr float kMapCanvasCenterX = 0.35f;
 constexpr float kMapCanvasCenterY = 0.0f;
 
-constexpr float kMapCanvasHalfWidth =
-    static_cast<float>(
-        kMapCanvasColumns *
-        kTilesetTileWidth *
-        kMapCanvasScale
-    ) /
-    static_cast<float>(kInitialWindowWidth);
+struct MapCanvasLayout final {
+    float left_pixels;
+    float top_pixels;
+    float cell_width_pixels;
+    float cell_height_pixels;
+    // One framebuffer pixel expressed in normalized device coordinates.
+    float pixel_width;
+    float pixel_height;
 
-constexpr float kMapCanvasHalfHeight =
-    static_cast<float>(
-        kMapCanvasRows *
-        kTilesetTileHeight *
-        kMapCanvasScale
-    ) /
-    static_cast<float>(kInitialWindowHeight);
+    [[nodiscard]] constexpr float column_x(std::uint32_t column) const
+    {
+        return (left_pixels + static_cast<float>(column) * cell_width_pixels) *
+            pixel_width - 1.0f;
+    }
 
-constexpr float kMapCanvasLeft =
-    kMapCanvasCenterX - kMapCanvasHalfWidth;
-constexpr float kMapCanvasTop =
-    kMapCanvasCenterY - kMapCanvasHalfHeight;
-constexpr float kMapCanvasRight =
-    kMapCanvasCenterX + kMapCanvasHalfWidth;
-constexpr float kMapCanvasBottom =
-    kMapCanvasCenterY + kMapCanvasHalfHeight;
-constexpr float kMapCanvasCellWidth =
-    (2.0f * kMapCanvasHalfWidth) /
-    static_cast<float>(kMapCanvasColumns);
-constexpr float kMapCanvasCellHeight =
-    (2.0f * kMapCanvasHalfHeight) /
-    static_cast<float>(kMapCanvasRows);
+    [[nodiscard]] constexpr float row_y(std::uint32_t row) const
+    {
+        return (top_pixels + static_cast<float>(row) * cell_height_pixels) *
+            pixel_height - 1.0f;
+    }
+};
+
+MapCanvasLayout make_map_canvas_layout(
+    const std::uint32_t zoom,
+    const VkExtent2D extent
+)
+{
+    const float width = static_cast<float>(std::max(1u, extent.width));
+    const float height = static_cast<float>(std::max(1u, extent.height));
+    const float cell_width = static_cast<float>(kTilesetTileWidth * zoom);
+    const float cell_height = static_cast<float>(kTilesetTileHeight * zoom);
+    const float atlas_right = (kTilesetPreviewRight + 1.0f) * width * 0.5f;
+
+    // Keep integer pixel alignment and leave room for the atlas in narrow windows.
+    return MapCanvasLayout{
+        .left_pixels = std::max(
+            std::ceil(atlas_right) + 16.0f,
+            std::round((kMapCanvasCenterX + 1.0f) * width * 0.5f -
+                static_cast<float>(kMapCanvasColumns) * cell_width * 0.5f)
+        ),
+        .top_pixels = std::max(
+            16.0f,
+            std::round((kMapCanvasCenterY + 1.0f) * height * 0.5f -
+                static_cast<float>(kMapCanvasRows) * cell_height * 0.5f)
+        ),
+        .cell_width_pixels = cell_width,
+        .cell_height_pixels = cell_height,
+        .pixel_width = 2.0f / width,
+        .pixel_height = 2.0f / height
+    };
+}
 
 static_assert(kTilesetPreviewLeft >= -1.0f);
 static_assert(kTilesetPreviewTop >= -1.0f);
 static_assert(kTilesetPreviewRight <= 1.0f);
 static_assert(kTilesetPreviewBottom <= 1.0f);
-static_assert(kMapCanvasLeft >= -1.0f);
-static_assert(kMapCanvasTop >= -1.0f);
-static_assert(kMapCanvasRight <= 1.0f);
-static_assert(kMapCanvasBottom <= 1.0f);
 static_assert(
     kSelectedRegionPreviewCenterX -
         kSelectedRegionPreviewMaxHalfWidth >= -1.0f
@@ -217,7 +236,6 @@ static_assert(
     kSelectedRegionPreviewCenterY +
         kSelectedRegionPreviewMaxHalfHeight <= 1.0f
 );
-static_assert(kTilesetPreviewRight < kMapCanvasLeft);
 static_assert(
     kTilesetPreviewBottom <
         kSelectedRegionPreviewCenterY -
@@ -277,28 +295,6 @@ constexpr float kGridLineWidth =
 
 constexpr float kGridLineHeight =
     (2.0f * static_cast<float>(kGridLineThickness)) /
-    static_cast<float>(kInitialWindowHeight);
-
-constexpr float kMapHoverOutlineWidth =
-    (2.0f * static_cast<float>(kMapHoverOutlineThickness)) /
-    static_cast<float>(kInitialWindowWidth);
-
-constexpr float kMapHoverOutlineHeight =
-    (2.0f * static_cast<float>(kMapHoverOutlineThickness)) /
-    static_cast<float>(kInitialWindowHeight);
-
-constexpr float kMapAreaSelectionOutlineWidth =
-    (
-        2.0f *
-        static_cast<float>(kMapAreaSelectionOutlineThickness)
-    ) /
-    static_cast<float>(kInitialWindowWidth);
-
-constexpr float kMapAreaSelectionOutlineHeight =
-    (
-        2.0f *
-        static_cast<float>(kMapAreaSelectionOutlineThickness)
-    ) /
     static_cast<float>(kInitialWindowHeight);
 
 constexpr std::array<Vertex2D, 4> kTilesetPreviewVertices{{
@@ -533,7 +529,9 @@ constexpr void append_map_canvas_quad(
         solid_color_vertex(left, bottom, red, green, blue);
 }
 
-constexpr MapCanvasVertices make_map_canvas_vertices()
+constexpr MapCanvasVertices make_map_canvas_vertices(
+    const MapCanvasLayout& layout
+)
 {
     MapCanvasVertices vertices{};
     std::size_t next_vertex = 0;
@@ -541,10 +539,10 @@ constexpr MapCanvasVertices make_map_canvas_vertices()
     append_map_canvas_quad(
         vertices,
         next_vertex,
-        kMapCanvasLeft,
-        kMapCanvasTop,
-        kMapCanvasRight,
-        kMapCanvasBottom,
+        layout.column_x(0),
+        layout.row_y(0),
+        layout.column_x(kMapCanvasColumns),
+        layout.row_y(kMapCanvasRows),
         kMapCanvasRed,
         kMapCanvasGreen,
         kMapCanvasBlue
@@ -553,25 +551,23 @@ constexpr MapCanvasVertices make_map_canvas_vertices()
     for (std::uint32_t column = 0;
          column <= kMapCanvasColumns;
          ++column) {
-        const float x =
-            kMapCanvasLeft +
-            static_cast<float>(column) * kMapCanvasCellWidth;
+        const float x = layout.column_x(column);
         const float left =
             column == kMapCanvasColumns
-                ? x - kGridLineWidth
+                ? x - layout.pixel_width * kGridLineThickness
                 : x;
         const float right =
             column == kMapCanvasColumns
                 ? x
-                : x + kGridLineWidth;
+                : x + layout.pixel_width * kGridLineThickness;
 
         append_map_canvas_quad(
             vertices,
             next_vertex,
             left,
-            kMapCanvasTop,
+            layout.row_y(0),
             right,
-            kMapCanvasBottom,
+            layout.row_y(kMapCanvasRows),
             kMapGridRed,
             kMapGridGreen,
             kMapGridBlue
@@ -581,24 +577,22 @@ constexpr MapCanvasVertices make_map_canvas_vertices()
     for (std::uint32_t row = 0;
          row <= kMapCanvasRows;
          ++row) {
-        const float y =
-            kMapCanvasTop +
-            static_cast<float>(row) * kMapCanvasCellHeight;
+        const float y = layout.row_y(row);
         const float top =
             row == kMapCanvasRows
-                ? y - kGridLineHeight
+                ? y - layout.pixel_height * kGridLineThickness
                 : y;
         const float bottom =
             row == kMapCanvasRows
                 ? y
-                : y + kGridLineHeight;
+                : y + layout.pixel_height * kGridLineThickness;
 
         append_map_canvas_quad(
             vertices,
             next_vertex,
-            kMapCanvasLeft,
+            layout.column_x(0),
             top,
-            kMapCanvasRight,
+            layout.column_x(kMapCanvasColumns),
             bottom,
             kMapGridRed,
             kMapGridGreen,
@@ -609,33 +603,27 @@ constexpr MapCanvasVertices make_map_canvas_vertices()
     return vertices;
 }
 
-constexpr MapCanvasVertices kMapCanvasVertices =
-    make_map_canvas_vertices();
-
 constexpr MapGridVertices kHiddenMapGridVertices{};
 
 static_assert(
-    kMapCanvasVertices.size() ==
+    MapCanvasVertices{}.size() ==
     kMapCanvasBackgroundVertexCount + kMapGridVertexCount
 );
 
 using MapTileCellVertices = std::array<Vertex2D, 4>;
 
 constexpr MapTileCellVertices make_map_tile_vertices(
+    const MapCanvasLayout& layout,
     const std::uint32_t map_column,
     const std::uint32_t map_row,
     const std::uint32_t tileset_column,
     const std::uint32_t tileset_row
 )
 {
-    const float left =
-        kMapCanvasLeft +
-        static_cast<float>(map_column) * kMapCanvasCellWidth;
-    const float top =
-        kMapCanvasTop +
-        static_cast<float>(map_row) * kMapCanvasCellHeight;
-    const float right = left + kMapCanvasCellWidth;
-    const float bottom = top + kMapCanvasCellHeight;
+    const float left = layout.column_x(map_column);
+    const float top = layout.row_y(map_row);
+    const float right = layout.column_x(map_column + 1);
+    const float bottom = layout.row_y(map_row + 1);
     const TextureRegion texture_region =
         tile_texture_region(
             tileset_column,
@@ -685,18 +673,15 @@ using CollisionOverlayCellVertices =
 
 constexpr CollisionOverlayCellVertices
 make_collision_overlay_cell_vertices(
+    const MapCanvasLayout& layout,
     const std::uint32_t column,
     const std::uint32_t row
 )
 {
-    const float left =
-        kMapCanvasLeft +
-        static_cast<float>(column) * kMapCanvasCellWidth;
-    const float top =
-        kMapCanvasTop +
-        static_cast<float>(row) * kMapCanvasCellHeight;
-    const float right = left + kMapCanvasCellWidth;
-    const float bottom = top + kMapCanvasCellHeight;
+    const float left = layout.column_x(column);
+    const float top = layout.row_y(row);
+    const float right = layout.column_x(column + 1);
+    const float bottom = layout.row_y(row + 1);
 
     return {{
         solid_color_vertex(
@@ -747,24 +732,21 @@ using MapHoverVertices =
     std::array<Vertex2D, kMapHoverVertexCount>;
 
 constexpr MapHoverVertices make_map_hover_vertices(
+    const MapCanvasLayout& layout,
     const std::uint32_t column,
     const std::uint32_t row,
     const MapLayer layer
 )
 {
-    const float left =
-        kMapCanvasLeft +
-        static_cast<float>(column) * kMapCanvasCellWidth;
-    const float top =
-        kMapCanvasTop +
-        static_cast<float>(row) * kMapCanvasCellHeight;
-    const float right = left + kMapCanvasCellWidth;
-    const float bottom = top + kMapCanvasCellHeight;
+    const float left = layout.column_x(column);
+    const float top = layout.row_y(row);
+    const float right = layout.column_x(column + 1);
+    const float bottom = layout.row_y(row + 1);
 
-    const float inner_left = left + kMapHoverOutlineWidth;
-    const float inner_top = top + kMapHoverOutlineHeight;
-    const float inner_right = right - kMapHoverOutlineWidth;
-    const float inner_bottom = bottom - kMapHoverOutlineHeight;
+    const float inner_left = left + layout.pixel_width * kMapHoverOutlineThickness;
+    const float inner_top = top + layout.pixel_height * kMapHoverOutlineThickness;
+    const float inner_right = right - layout.pixel_width * kMapHoverOutlineThickness;
+    const float inner_bottom = bottom - layout.pixel_height * kMapHoverOutlineThickness;
 
     return {{
         map_hover_vertex(left, top, layer),
@@ -787,35 +769,26 @@ using MapAreaSelectionVertices =
 
 constexpr MapAreaSelectionVertices
 make_map_area_selection_vertices(
+    const MapCanvasLayout& layout,
     const std::uint32_t left_column,
     const std::uint32_t top_row,
     const std::uint32_t right_column,
     const std::uint32_t bottom_row
 )
 {
-    const float left =
-        kMapCanvasLeft +
-        static_cast<float>(left_column) * kMapCanvasCellWidth;
-    const float top =
-        kMapCanvasTop +
-        static_cast<float>(top_row) * kMapCanvasCellHeight;
-    const float right =
-        kMapCanvasLeft +
-        static_cast<float>(right_column + 1) *
-            kMapCanvasCellWidth;
-    const float bottom =
-        kMapCanvasTop +
-        static_cast<float>(bottom_row + 1) *
-            kMapCanvasCellHeight;
+    const float left = layout.column_x(left_column);
+    const float top = layout.row_y(top_row);
+    const float right = layout.column_x(right_column + 1);
+    const float bottom = layout.row_y(bottom_row + 1);
 
     const float inner_left =
-        left + kMapAreaSelectionOutlineWidth;
+        left + layout.pixel_width * kMapAreaSelectionOutlineThickness;
     const float inner_top =
-        top + kMapAreaSelectionOutlineHeight;
+        top + layout.pixel_height * kMapAreaSelectionOutlineThickness;
     const float inner_right =
-        right - kMapAreaSelectionOutlineWidth;
+        right - layout.pixel_width * kMapAreaSelectionOutlineThickness;
     const float inner_bottom =
-        bottom - kMapAreaSelectionOutlineHeight;
+        bottom - layout.pixel_height * kMapAreaSelectionOutlineThickness;
 
     return {{
         map_area_selection_vertex(left, top),
@@ -965,7 +938,7 @@ make_tile_selection_vertices(
 constexpr std::size_t kQuadVertexCount =
     kTilesetPreviewVertices.size() +
     kTilesetGridVertices.size() +
-    kMapCanvasVertices.size() +
+    MapCanvasVertices{}.size() +
     kTileSelectionVertexCount +
     kMapHoverVertexCount +
     kMapTileVertexCount +
@@ -993,7 +966,7 @@ constexpr std::size_t kMapGridVertexByteOffset =
 constexpr std::size_t kTileSelectionVertexByteOffset =
     sizeof(kTilesetPreviewVertices) +
     sizeof(kTilesetGridVertices) +
-    sizeof(kMapCanvasVertices);
+    sizeof(MapCanvasVertices);
 
 constexpr std::size_t kMapHoverVertexByteOffset =
     kTileSelectionVertexByteOffset +
@@ -1114,7 +1087,7 @@ constexpr QuadIndices make_quad_indices()
     const std::uint16_t map_tile_first_vertex =
         map_canvas_first_vertex +
         static_cast<std::uint16_t>(
-            kMapCanvasVertices.size() +
+            MapCanvasVertices{}.size() +
             kTileSelectionVertexCount +
             kMapHoverVertexCount
         );
@@ -1171,7 +1144,7 @@ constexpr QuadIndices make_quad_indices()
         static_cast<std::uint16_t>(
             kTilesetPreviewVertices.size() +
             kTilesetGridVertices.size() +
-            kMapCanvasVertices.size()
+            MapCanvasVertices{}.size()
         );
 
     append_quad_indices(
@@ -1288,11 +1261,7 @@ Application::Application()
 
     upload_tileset_grid_vertices();
 
-    quad_vertex_buffer_.upload(
-        kMapCanvasVertices.data(),
-        sizeof(kMapCanvasVertices),
-        kMapCanvasVertexByteOffset
-    );
+    upload_map_canvas_vertices();
 
     upload_tile_selection_vertices();
     upload_map_hover_vertices();
@@ -1484,6 +1453,7 @@ bool Application::recreate_swapchain_resources()
     swapchain_window_pixel_width_ = window_.pixel_width();
     swapchain_window_pixel_height_ = window_.pixel_height();
     swapchain_recreation_pending_ = false;
+    refresh_map_geometry();
 
     std::cout << "[Midnight] Vulkan swapchain resources recreated\n";
 
@@ -2034,7 +2004,7 @@ void Application::print_startup_info() const
               << "x"
               << kMapCanvasRows
               << " tiles at "
-              << kMapCanvasScale
+              << map_zoom_
               << "x\n";
     std::cout << "[Midnight] Map layers: "
               << map_layer_name(MapLayer::Ground)
@@ -2079,6 +2049,7 @@ void Application::print_startup_info() const
     std::cout << "[Midnight] Press C to toggle the Above Ground collision overlay\n";
     std::cout << "[Midnight] Press G to toggle the atlas grid\n";
     std::cout << "[Midnight] Press M to toggle the map grid\n";
+    std::cout << "[Midnight] Press +/= or - (including keypad) for 1x, 2x, or 3x map zoom\n";
     std::cout << "[Midnight] Press Escape or close the window to quit\n";
     std::cout << "[Midnight] Unsaved changes prompt you to Save, Discard, or Cancel before closing\n";
 }
@@ -2229,6 +2200,21 @@ void Application::poll_events()
                     case SDLK_C:
                         if (!event.key.repeat) {
                             toggle_collision_overlay();
+                        }
+                        break;
+
+                    case SDLK_EQUALS:
+                    case SDLK_PLUS:
+                    case SDLK_KP_PLUS:
+                        if (!event.key.repeat) {
+                            change_map_zoom(1);
+                        }
+                        break;
+
+                    case SDLK_MINUS:
+                    case SDLK_KP_MINUS:
+                        if (!event.key.repeat) {
+                            change_map_zoom(-1);
                         }
                         break;
 
@@ -3721,6 +3707,7 @@ void Application::upload_map_tile_vertices(
     const MapTileCellVertices vertices =
         map_tile.occupied
             ? make_map_tile_vertices(
+                  make_map_canvas_layout(map_zoom_, swapchain_resources_.swapchain->extent()),
                   column,
                   row,
                   map_tile.tileset_column,
@@ -3827,6 +3814,7 @@ void Application::upload_collision_overlay_cell_vertices(
         collision_overlay_visible_ &&
             above_ground_tile.occupied
             ? make_collision_overlay_cell_vertices(
+                  make_map_canvas_layout(map_zoom_, swapchain_resources_.swapchain->extent()),
                   column,
                   row
               )
@@ -3914,46 +3902,30 @@ bool Application::window_position_to_map_cell(
         return false;
     }
 
-    const float normalized_x =
-        (2.0f * x / static_cast<float>(window_.width())) - 1.0f;
-    const float normalized_y =
-        (2.0f * y / static_cast<float>(window_.height())) - 1.0f;
-
+    const VkExtent2D extent = swapchain_resources_.swapchain->extent();
+    const MapCanvasLayout layout = make_map_canvas_layout(map_zoom_, extent);
+    const float map_x =
+        (x * static_cast<float>(extent.width) / static_cast<float>(window_.width()) -
+            layout.left_pixels) / layout.cell_width_pixels;
+    const float map_y =
+        (y * static_cast<float>(extent.height) / static_cast<float>(window_.height()) -
+            layout.top_pixels) / layout.cell_height_pixels;
     const bool position_is_in_map =
-        normalized_x >= kMapCanvasLeft &&
-        normalized_x < kMapCanvasRight &&
-        normalized_y >= kMapCanvasTop &&
-        normalized_y < kMapCanvasBottom;
+        x >= 0.0f && x < static_cast<float>(window_.width()) &&
+        y >= 0.0f && y < static_cast<float>(window_.height()) &&
+        map_x >= 0.0f && map_x < static_cast<float>(kMapCanvasColumns) &&
+        map_y >= 0.0f && map_y < static_cast<float>(kMapCanvasRows);
 
     if (!clamp_to_map && !position_is_in_map) {
         return false;
     }
 
-    const float map_x = std::clamp(
-        (normalized_x - kMapCanvasLeft) /
-            (kMapCanvasRight - kMapCanvasLeft),
-        0.0f,
-        1.0f
-    );
-    const float map_y = std::clamp(
-        (normalized_y - kMapCanvasTop) /
-            (kMapCanvasBottom - kMapCanvasTop),
-        0.0f,
-        1.0f
-    );
-
-    column = std::min(
-        static_cast<std::uint32_t>(
-            map_x * static_cast<float>(kMapCanvasColumns)
-        ),
-        kMapCanvasColumns - 1
-    );
-    row = std::min(
-        static_cast<std::uint32_t>(
-            map_y * static_cast<float>(kMapCanvasRows)
-        ),
-        kMapCanvasRows - 1
-    );
+    column = static_cast<std::uint32_t>(std::clamp(
+        map_x, 0.0f, static_cast<float>(kMapCanvasColumns - 1)
+    ));
+    row = static_cast<std::uint32_t>(std::clamp(
+        map_y, 0.0f, static_cast<float>(kMapCanvasRows - 1)
+    ));
 
     return true;
 }
@@ -3963,6 +3935,7 @@ void Application::upload_map_hover_vertices()
     const MapHoverVertices vertices =
         map_hover_visible_
             ? make_map_hover_vertices(
+                  make_map_canvas_layout(map_zoom_, swapchain_resources_.swapchain->extent()),
                   hovered_map_column_,
                   hovered_map_row_,
                   active_map_layer_
@@ -3981,6 +3954,7 @@ void Application::upload_map_area_selection_vertices()
     const MapAreaSelectionVertices vertices =
         map_area_selection_visible_
             ? make_map_area_selection_vertices(
+                  make_map_canvas_layout(map_zoom_, swapchain_resources_.swapchain->extent()),
                   map_area_selection_left_,
                   map_area_selection_top_,
                   map_area_selection_right_,
@@ -4035,9 +4009,12 @@ void Application::toggle_map_grid()
 
 void Application::upload_map_grid_vertices()
 {
+    const MapCanvasVertices canvas = make_map_canvas_vertices(
+        make_map_canvas_layout(map_zoom_, swapchain_resources_.swapchain->extent())
+    );
     const Vertex2D* vertices =
         map_grid_visible_
-            ? kMapCanvasVertices.data() +
+            ? canvas.data() +
                   kMapCanvasBackgroundVertexCount
             : kHiddenMapGridVertices.data();
 
@@ -4046,6 +4023,67 @@ void Application::upload_map_grid_vertices()
         sizeof(kHiddenMapGridVertices),
         kMapGridVertexByteOffset
     );
+}
+
+void Application::upload_map_canvas_vertices()
+{
+    const MapCanvasVertices vertices = make_map_canvas_vertices(
+        make_map_canvas_layout(map_zoom_, swapchain_resources_.swapchain->extent())
+    );
+    quad_vertex_buffer_.upload(
+        vertices.data(),
+        sizeof(vertices),
+        kMapCanvasVertexByteOffset
+    );
+
+    if (!map_grid_visible_) {
+        upload_map_grid_vertices();
+    }
+}
+
+void Application::refresh_map_geometry()
+{
+    wait_for_rendering_resources();
+    upload_map_canvas_vertices();
+    upload_all_map_tile_vertices();
+    upload_map_area_selection_vertices();
+
+    float mouse_x = 0.0f;
+    float mouse_y = 0.0f;
+    (void)SDL_GetMouseState(&mouse_x, &mouse_y);
+    map_hover_visible_ =
+        SDL_GetMouseFocus() == window_.sdl_handle() &&
+        window_position_to_map_cell(
+            mouse_x, mouse_y, hovered_map_column_, hovered_map_row_
+        );
+    upload_map_hover_vertices();
+}
+
+void Application::change_map_zoom(const int delta)
+{
+    if (tile_selection_dragging_ ||
+        map_paint_dragging_ ||
+        map_rectangle_dragging_ ||
+        map_area_selection_dragging_ ||
+        map_erase_dragging_ ||
+        map_edit_active_) {
+        std::cout << "[Midnight] Finish the current drag or edit before zooming\n";
+        return;
+    }
+
+    const auto next_zoom = static_cast<std::uint32_t>(std::clamp(
+        static_cast<int>(map_zoom_) + delta,
+        kMinimumMapZoom,
+        kMaximumMapZoom
+    ));
+
+    if (next_zoom == map_zoom_) {
+        return;
+    }
+
+    map_zoom_ = next_zoom;
+    refresh_map_geometry();
+    std::cout << "[Midnight] Map zoom: " << map_zoom_ << "x\n";
 }
 
 void Application::move_tile_selection(
